@@ -2,7 +2,7 @@ import React from 'react';
 import { ThemeProvider } from './components/ThemeContext';
 import { AuthProvider } from './components/AuthContext';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
-
+import CommuterDashboard from './pages/commuter/commuterDashboard';
 import HomePage from './pages/HomePage';
 import { LandingPage } from './pages/public/LandingPage';
 import Layout from './pages/Layout';
@@ -12,7 +12,6 @@ import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
 import ScheduleDetails from './pages/ScheduleDetails';
 import AdminDashboard from './pages/admin/AdminDashboard';
-import CommuterDashboard from './pages/commuter/CommuterDashboard';
 import DriverDashboard from './pages/driver/DriverDashboard';
 import PublicLayout from './layouts/PublicLayout';
 import AdminLayout from './layouts/AdminLayout';

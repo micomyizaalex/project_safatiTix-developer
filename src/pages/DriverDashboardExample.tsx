@@ -44,7 +44,7 @@ export default function DriverDashboardExample() {
       }
 
       const response = await fetch(
-        `${import.meta.env.VITE_API_BASE_URL}/api/driver/today-schedule`,
+        '/api/driver/today-schedule',
         {
           headers: {
             Authorization: `Bearer ${accessToken}`,

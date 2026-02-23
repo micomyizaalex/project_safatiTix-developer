@@ -112,9 +112,17 @@ export default function DriverDashboard() {
         const loaded = Array.isArray(j) ? j : (j.trips || j.data || []);
         setTrips(loaded);
         // compute active and upcoming trips for dashboard
-        const act = loaded.find((t: any) => String(t.status).toUpperCase() === 'ACTIVE') || null;
+        const act = loaded.find((t: any) => {
+          const status = String(t.status || '').toUpperCase();
+          return status === 'ACTIVE' || status === 'IN_PROGRESS';
+        }) || null;
         setActiveTrip(act);
-        setUpcomingTrips(loaded.filter((t: any) => String(t.status).toUpperCase() !== 'ACTIVE'));
+        setUpcomingTrips(
+          loaded.filter((t: any) => {
+            const status = String(t.status || '').toUpperCase();
+            return status !== 'ACTIVE' && status !== 'IN_PROGRESS';
+          })
+        );
       } catch (err: any) {
         if (mounted) setTripsError(err.message || 'Failed to load trips');
       } finally {
@@ -850,7 +858,15 @@ function ScannerModal({
       }
 
       // Use the first camera (or back camera if available)
-      const selectedDeviceId = videoInputDevices[0]?.deviceId;
+      const backCamera = videoInputDevices.find((d) =>
+        /back|rear|environment/i.test(d.label || '')
+      );
+      const selectedDeviceId = backCamera?.deviceId || videoInputDevices[0]?.deviceId;
+      if (!selectedDeviceId) {
+        setError('Could not determine a camera device id');
+        setScanning(false);
+        return;
+      }
 
       if (readerRef.current && videoRef.current) {
         const controls = await readerRef.current.decodeFromVideoDevice(
@@ -868,7 +884,8 @@ function ScannerModal({
               lastScannedCodeRef.current = qrCode;
               await handleScan(qrCode);
             }
-            if (err && !(err instanceof Error && err.message.includes('NotFoundException'))) {
+            const errMessage = (err as any)?.message;
+            if (err && !(typeof errMessage === 'string' && errMessage.includes('NotFoundException'))) {
               console.error('QR scanning error:', err);
             }
           }

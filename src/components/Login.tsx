@@ -466,6 +466,7 @@ export function Login() {
                 <input
                   type={showPassword ? 'text' : 'password'}
                   placeholder="Enter your password"
+                  autoComplete="current-password"
                   value={loginPassword}
                   onChange={(e) => setLoginPassword(e.target.value)}
                   style={styles.input}

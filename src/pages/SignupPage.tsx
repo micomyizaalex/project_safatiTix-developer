@@ -530,6 +530,7 @@ export default function SignupPage() {
                 <input
                   type={showPassword ? "text" : "password"}
                   placeholder="Enter your password"
+                  autoComplete="new-password"
                   value={signupPassword}
                   onChange={(e) => setSignupPassword(e.target.value)}
                   style={styles.input}

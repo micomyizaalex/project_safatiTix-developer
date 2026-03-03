@@ -1,4 +1,4 @@
-const DEFAULT_BACKEND_ORIGIN = 'https://backend-7cxc.onrender.com';
+const DEFAULT_BACKEND_ORIGIN = 'http://localhost:5000';
 
 const trimTrailingSlash = (value: string) => value.replace(/\/+$/, '');
 
@@ -11,9 +11,7 @@ const rawApiBase = String(import.meta.env.VITE_API_BASE_URL || '').trim();
 const normalizedApiBase = rawApiBase ? trimTrailingSlash(rawApiBase) : '';
 
 export const API_ORIGIN = normalizedApiBase || (import.meta.env.PROD ? DEFAULT_BACKEND_ORIGIN : '');
-export const SOCKET_ORIGIN = import.meta.env.DEV
-  ? window.location.origin
-  : API_ORIGIN || DEFAULT_BACKEND_ORIGIN;
+export const SOCKET_ORIGIN = API_ORIGIN || DEFAULT_BACKEND_ORIGIN;
 
 export const apiUrl = (path: string) => {
   const normalizedPath = normalizePath(path);

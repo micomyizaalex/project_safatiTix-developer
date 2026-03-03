@@ -148,12 +148,11 @@ export default function CompanyDashboard() {
           const activeTripsData = await activeTripsRes.json();
           const activeTrips = activeTripsData.activeTrips || [];
           
-          console.log('Active trips fetched:', activeTrips);
           const inProgressTrips = activeTrips.filter((trip: any) => trip.status === 'in_progress');
           setTotalActiveTrips(inProgressTrips.length);
 
           // Map active trips to the expected format for the dashboard
-          const active = activeTrips.map((trip: any) => {
+          const active = activeTrips.map((trip: any, index: number) => {
             // Calculate ETA (time since trip started)
             let eta = '—';
             if (trip.tripStartTime) {
@@ -166,7 +165,7 @@ export default function CompanyDashboard() {
             const route = `${trip.routeFrom} → ${trip.routeTo}`;
 
             return {
-              id: trip.busPlate,
+              id: trip.scheduleId || trip.id || `${trip.busPlate || 'unknown'}-${index}`,
               plate: trip.busPlate,
               driver: trip.driverName || '—',
               route,
@@ -175,7 +174,6 @@ export default function CompanyDashboard() {
               status: 'in_progress'
             };
           });
-          console.log("acctive buses", active)
 
           setActiveBusesList(active);
         } else {
@@ -1127,7 +1125,9 @@ function SchedulesSection() {
 }
 
 function TrackingSection({totalActiveTrips}: { totalActiveTrips: number  }) {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+  const token = typeof window !== 'undefined'
+    ? (localStorage.getItem('token') || localStorage.getItem('accessToken'))
+    : null;
   return <CompanyFleetTracking token={token} activeBuses={totalActiveTrips} />;
 }
 

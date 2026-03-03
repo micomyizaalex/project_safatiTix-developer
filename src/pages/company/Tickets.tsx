@@ -38,7 +38,7 @@ export default function Tickets() {
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
-  const API_URL = import.meta.env.VITE_API_URL || 'https://backend-7cxc.onrender.com/api';
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
   useEffect(() => {
     fetchTickets();

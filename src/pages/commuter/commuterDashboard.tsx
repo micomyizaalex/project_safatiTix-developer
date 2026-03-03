@@ -275,7 +275,7 @@ const hasMapboxToken = typeof MAPBOX_TOKEN === 'string' && MAPBOX_TOKEN.trim().l
         const hdrs: Record<string, string> = { 'Content-Type': 'application/json' };
         if (accessToken) hdrs['Authorization'] = `Bearer ${accessToken}`;
 
-        const API_URL = import.meta.env.VITE_API_URL || 'https://backend-7cxc.onrender.com/api';
+        const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
         const response = await fetch(`${API_URL}/tracking/company/live-locations`, {
           headers: hdrs,
         });

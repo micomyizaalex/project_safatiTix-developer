@@ -73,11 +73,29 @@ function MapBoundsFitter({ buses }: { buses: BusLocation[] }) {
   return null;
 }
 
+function MapFocusOnSelected({ selectedBus, buses }: { selectedBus: string | null; buses: BusLocation[] }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!selectedBus) return;
+    const bus = buses.find(b => b.scheduleId === selectedBus && b.location);
+    if (!bus || !bus.location) return;
+
+    // Avoid transition race conditions during rapid re-renders/unmounts.
+    if ((map as any)?._loaded) {
+      map.setView([bus.location.latitude, bus.location.longitude], 15, { animate: false });
+    }
+  }, [selectedBus, buses, map]);
+
+  return null;
+}
+
 export default function CompanyFleetTracking({ token, activeBuses }: CompanyFleetTrackingProps) {
   const [buses, setBuses] = useState<BusLocation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedBus, setSelectedBus] = useState<string | null>(null);
+  const [selectionNote, setSelectionNote] = useState<string | null>(null);
   const socketRef = useRef<Socket | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
 
@@ -93,9 +111,7 @@ export default function CompanyFleetTracking({ token, activeBuses }: CompanyFlee
       setLoading(true);
       setError(null);
 
-      const baseUrl = import.meta.env.VITE_API_BASE_URL || 'https://backend-7cxc.onrender.com';
-
-      console.log('Fetching schedules from:', `${baseUrl}/api/company/schedules`);
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
 
       // Fetch all company schedules
       const schedulesRes = await fetch(`${baseUrl}/api/company/schedules`, {
@@ -112,30 +128,20 @@ export default function CompanyFleetTracking({ token, activeBuses }: CompanyFlee
       }
 
       const schedulesData = await schedulesRes.json();
-      console.log('Fetched schedules data:', schedulesData);
       const schedules = schedulesData.schedules || [];
-      console.log('Total schedules:', schedules.length);
 
-      // Filter for today's schedules only
+      // Track schedules that are in progress or scheduled for today.
       const today = new Date().toISOString().split('T')[0];
       const todaySchedules = schedules.filter((sch: any) => {
-        if (!sch.departureTime) {
-          console.log('Schedule missing departureTime:', sch);
-          return false;
+        const status = String(sch.status || '').toLowerCase();
+        if (status === 'in_progress' || status === 'active') {
+          return true;
         }
-        try {
-          const schDate = new Date(sch.departureTime);
-          if (isNaN(schDate.getTime())) {
-            console.error('Invalid departureTime value:', sch.departureTime);
-            return false;
-          }
-          return schDate.toISOString().split('T')[0] === today;
-        } catch (err) {
-          console.error('Invalid departureTime:', sch.departureTime, err);
-          return false;
-        }
+        const rawDate = sch.scheduleDate || sch.schedule_date || sch.date || null;
+        if (!rawDate) return false;
+        const normalizedDate = String(rawDate).slice(0, 10);
+        return normalizedDate === today;
       });
-      console.log('Today\'s schedules:', todaySchedules.length);
 
       // For each schedule, try to get its location
       const locationPromises = todaySchedules.map(async (schedule: any) => {
@@ -162,7 +168,9 @@ export default function CompanyFleetTracking({ token, activeBuses }: CompanyFlee
                 ? `${schedule.routeFrom} → ${schedule.routeTo}` 
                 : 'Unknown Route',
               location: locationData.location || null,
-              status: locationData.location ? 'active' : (schedule.status === 'completed' ? 'completed' : 'inactive'),
+              status: locationData.location
+                ? 'active'
+                : (schedule.status === 'completed' ? 'completed' : (schedule.status === 'in_progress' ? 'active' : 'inactive')),
               departureTime: schedule.departureTime || null,
             };
           } else {
@@ -175,7 +183,7 @@ export default function CompanyFleetTracking({ token, activeBuses }: CompanyFlee
                 ? `${schedule.routeFrom} → ${schedule.routeTo}` 
                 : 'Unknown Route',
               location: null,
-              status: schedule.status === 'completed' ? 'completed' : 'inactive',
+              status: schedule.status === 'completed' ? 'completed' : (schedule.status === 'in_progress' ? 'active' : 'inactive'),
               departureTime: schedule.departureTime || null,
             };
           }
@@ -189,14 +197,13 @@ export default function CompanyFleetTracking({ token, activeBuses }: CompanyFlee
               ? `${schedule.routeFrom} → ${schedule.routeTo}` 
               : 'Unknown Route',
             location: null,
-            status: schedule.status === 'completed' ? 'completed' : 'inactive',
+            status: schedule.status === 'completed' ? 'completed' : (schedule.status === 'in_progress' ? 'active' : 'inactive'),
             departureTime: schedule.departureTime || null,
           };
         }
       });
 
       const busLocations = await Promise.all(locationPromises);
-      console.log('Processed bus locations:', busLocations);
       setBuses(busLocations);
       setLoading(false);
     } catch (err: any) {
@@ -226,12 +233,10 @@ export default function CompanyFleetTracking({ token, activeBuses }: CompanyFlee
       console.log('Fleet tracking: Socket.IO connected');
       setConnectionStatus('connected');
 
-      // Join rooms for all active schedules
+      // Join all currently loaded schedules so first location update appears instantly.
       buses.forEach(bus => {
-        if (bus.status === 'active' && bus.location) {
-          socket.emit('companyAdmin:joinSchedule', { scheduleId: bus.scheduleId });
-          console.log(`Joined room for schedule: ${bus.scheduleId}`);
-        }
+        socket.emit('companyAdmin:joinSchedule', { scheduleId: bus.scheduleId });
+        console.log(`Joined room for schedule: ${bus.scheduleId}`);
       });
     });
 
@@ -248,41 +253,85 @@ export default function CompanyFleetTracking({ token, activeBuses }: CompanyFlee
     // Listen for location updates from any bus
     socket.on('bus:locationUpdate', (data: any) => {
       console.log('Fleet tracking: Received location update:', data);
-      setBuses(prevBuses => 
-        prevBuses.map(bus => 
+      const incomingLocation = data.location || {
+        latitude: data.latitude,
+        longitude: data.longitude,
+        speed: data.speed ?? null,
+        heading: data.heading ?? null,
+        recorded_at: data.timestamp || new Date().toISOString(),
+      };
+
+      setBuses(prevBuses => {
+        const exists = prevBuses.some(bus => bus.scheduleId === data.scheduleId);
+        if (!exists) {
+          return [
+            ...prevBuses,
+            {
+              scheduleId: data.scheduleId,
+              busPlate: data.busPlate || 'Unknown',
+              driverName: data.driverName || null,
+              routeName: data.routeName || 'Unknown Route',
+              location: incomingLocation,
+              status: 'active',
+              departureTime: data.departureTime || '',
+            }
+          ];
+        }
+
+        return prevBuses.map(bus =>
           bus.scheduleId === data.scheduleId
-            ? {
-                ...bus,
-                location: data.location,
-                status: 'active' as const,
-              }
+            ? { ...bus, location: incomingLocation, status: 'active' as const }
             : bus
-        )
-      );
+        );
+      });
     });
 
     // Listen for current location when joining
     socket.on('bus:currentLocation', (data: any) => {
       console.log('Fleet tracking: Received current location:', data);
-      setBuses(prevBuses =>
-        prevBuses.map(bus =>
+      const incomingLocation = data.location || {
+        latitude: data.latitude,
+        longitude: data.longitude,
+        speed: data.speed ?? null,
+        heading: data.heading ?? null,
+        recorded_at: data.timestamp || new Date().toISOString(),
+      };
+
+      setBuses(prevBuses => {
+        const exists = prevBuses.some(bus => bus.scheduleId === data.scheduleId);
+        if (!exists) {
+          return [
+            ...prevBuses,
+            {
+              scheduleId: data.scheduleId,
+              busPlate: data.busPlate || 'Unknown',
+              driverName: data.driver ? `${data.driver.first_name} ${data.driver.last_name}` : null,
+              routeName: data.routeName || 'Unknown Route',
+              location: incomingLocation,
+              status: 'active',
+              departureTime: data.departureTime || '',
+            }
+          ];
+        }
+
+        return prevBuses.map(bus =>
           bus.scheduleId === data.scheduleId
             ? {
                 ...bus,
-                location: data.location,
+                location: incomingLocation,
                 driverName: data.driver ? `${data.driver.first_name} ${data.driver.last_name}` : bus.driverName,
                 status: 'active' as const,
               }
             : bus
-        )
-      );
+        );
+      });
     });
 
     return () => {
       console.log('Fleet tracking: Cleaning up Socket.IO connection');
       socket.disconnect();
     };
-  }, [token, buses.length]); // Re-connect when number of buses changes
+  }, [token]);
 
   // Fetch fleet data on mount and every 30 seconds
   useEffect(() => {
@@ -295,12 +344,10 @@ export default function CompanyFleetTracking({ token, activeBuses }: CompanyFlee
   useEffect(() => {
     if (socketRef.current?.connected) {
       buses.forEach(bus => {
-        if (bus.status === 'active' && bus.location) {
-          socketRef.current?.emit('companyAdmin:joinSchedule', { scheduleId: bus.scheduleId });
-        }
+        socketRef.current?.emit('companyAdmin:joinSchedule', { scheduleId: bus.scheduleId });
       });
     }
-  }, [buses]);
+  }, [buses, connectionStatus]);
 
   // Get default center (if no buses, use Rwanda coordinates)
   const getDefaultCenter = (): [number, number] => {
@@ -312,7 +359,58 @@ export default function CompanyFleetTracking({ token, activeBuses }: CompanyFlee
     return [-1.9403, 29.8739]; // Kigali, Rwanda
   };
 
-  const activeBusesCount = buses.filter(b => b.status === 'in_progress').length;
+  const handleSelectBus = async (bus: BusLocation) => {
+    setSelectedBus(bus.scheduleId);
+    setSelectionNote(null);
+
+    if (bus.location) return;
+    if (!token) {
+      setSelectionNote('Missing authentication token. Please sign in again.');
+      return;
+    }
+
+    try {
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
+      const res = await fetch(`${baseUrl}/api/tracking/schedule/${bus.scheduleId}/location`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!res.ok) {
+        setSelectionNote('Unable to fetch location for this bus right now.');
+        return;
+      }
+
+      const data = await res.json();
+      if (!data?.hasLocation || !data?.location) {
+        setSelectionNote('This bus has not shared GPS location yet.');
+        return;
+      }
+
+      setBuses(prev =>
+        prev.map(item =>
+          item.scheduleId === bus.scheduleId
+            ? {
+                ...item,
+                location: {
+                  latitude: data.location.latitude,
+                  longitude: data.location.longitude,
+                  speed: data.location.speed ?? null,
+                  heading: data.location.heading ?? null,
+                  recorded_at: data.location.timestamp || new Date().toISOString(),
+                },
+                status: 'active',
+              }
+            : item
+        )
+      );
+    } catch (err) {
+      setSelectionNote('Failed to load this bus location.');
+    }
+  };
+
   const inactiveBusesCount = buses.filter(b => b.status === 'inactive').length;
 
   if (loading) {
@@ -341,19 +439,6 @@ export default function CompanyFleetTracking({ token, activeBuses }: CompanyFlee
           >
             Retry
           </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (buses.length === 0) {
-    return (
-      <div className="bg-white rounded-2xl p-6 shadow-sm">
-        <h2 className="text-2xl font-['Montserrat'] font-bold text-[#2B2D42] mb-4">Live Fleet Tracking</h2>
-        <div className="text-center py-12">
-          <Bus className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-          <p className="text-gray-600 text-lg mb-2">No active schedules today</p>
-          <p className="text-gray-500 text-sm">Schedule trips to start tracking your fleet</p>
         </div>
       </div>
     );
@@ -439,6 +524,7 @@ export default function CompanyFleetTracking({ token, activeBuses }: CompanyFlee
               />
               
               <MapBoundsFitter buses={buses} />
+              <MapFocusOnSelected selectedBus={selectedBus} buses={buses} />
 
               {buses.map(bus => {
                 if (!bus.location) return null;
@@ -449,7 +535,7 @@ export default function CompanyFleetTracking({ token, activeBuses }: CompanyFlee
                     position={[bus.location.latitude, bus.location.longitude]}
                     icon={createBusIcon(bus.status === 'active')}
                     eventHandlers={{
-                      click: () => setSelectedBus(bus.scheduleId),
+                      click: () => handleSelectBus(bus),
                     }}
                   >
                     <Popup>
@@ -510,12 +596,22 @@ export default function CompanyFleetTracking({ token, activeBuses }: CompanyFlee
               <MapPinned className="w-5 h-5 text-[#27AE60]" />
               Fleet Status
             </h3>
+            {selectionNote && (
+              <p className="mb-3 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                {selectionNote}
+              </p>
+            )}
             
             <div className="space-y-3">
+              {buses.length === 0 && (
+                <div className="rounded-lg border border-dashed border-gray-300 bg-white p-4 text-sm text-gray-600">
+                  No schedules for today yet. The map is ready and will show buses as soon as drivers start sharing location.
+                </div>
+              )}
               {buses.map(bus => (
                 <div
                   key={bus.scheduleId}
-                  onClick={() => setSelectedBus(bus.scheduleId)}
+                  onClick={() => handleSelectBus(bus)}
                   className={`p-3 rounded-lg border-2 cursor-pointer transition-all ${
                     selectedBus === bus.scheduleId
                       ? 'border-[#27AE60] bg-green-50'

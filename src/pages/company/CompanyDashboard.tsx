@@ -6,6 +6,7 @@ import RevenueReports from './RevenueReports';
 import TicketsManagement from './TicketsManagement';
 import CompanyFleetTracking from '../../components/CompanyFleetTracking';
 import CompanySharedRoutesSection from '../../components/CompanySharedRoutesSection';
+import NotificationBell from '../../components/NotificationBell';
 import {
   LayoutDashboard,
   Bus,
@@ -449,10 +450,7 @@ export default function CompanyDashboard() {
 
           <div className="flex items-center gap-4">
             {/* Notifications */}
-            <button className="relative w-10 h-10 flex items-center justify-center rounded-lg hover:bg-gray-100 transition-colors">
-              <Bell className="w-5 h-5 text-gray-600" />
-              <span className="absolute top-1 right-1 w-2 h-2 bg-[#E63946] rounded-full"></span>
-            </button>
+            <NotificationBell />
 
             {/* Profile */}
             <button className="flex items-center gap-3 hover:bg-gray-100 rounded-lg px-3 py-2 transition-colors">
@@ -1138,10 +1136,260 @@ function TrackingSection({totalActiveTrips}: { totalActiveTrips: number  }) {
 }
 
 function SettingsSection() {
+  const { user, accessToken, signIn } = useAuth();
+  const token = accessToken || (typeof window !== 'undefined' ? localStorage.getItem('token') : null);
+
+  // ── tabs ──────────────────────────────────────────────────────────────────
+  const [tab, setTab] = React.useState<'company' | 'account' | 'password'>('company');
+
+  // ── company form ──────────────────────────────────────────────────────────
+  const [company, setCompany] = React.useState<any>(null);
+  const [compForm, setCompForm] = React.useState({ name: '', email: '', phone: '', address: '' });
+  const [compSaving, setCompSaving] = React.useState(false);
+  const [compMsg, setCompMsg] = React.useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+
+  // ── account (admin profile) form ──────────────────────────────────────────
+  const [accForm, setAccForm] = React.useState({ name: '', phone: '' });
+  const [accSaving, setAccSaving] = React.useState(false);
+  const [accMsg, setAccMsg] = React.useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+
+  // ── password form ──────────────────────────────────────────────────────────
+  const [pwForm, setPwForm] = React.useState({ current: '', newPw: '', confirm: '' });
+  const [pwSaving, setPwSaving] = React.useState(false);
+  const [pwMsg, setPwMsg] = React.useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+
+  // ── load company on mount ─────────────────────────────────────────────────
+  React.useEffect(() => {
+    if (!token) return;
+    fetch('/api/company', { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(j => {
+        const c = j.company || {};
+        setCompany(c);
+        setCompForm({ name: c.name || '', email: c.email || '', phone: c.phone || '', address: c.address || '' });
+      })
+      .catch(() => {});
+  }, [token]);
+
+  React.useEffect(() => {
+    setAccForm({ name: user?.name || '', phone: user?.phone || '' });
+  }, [user]);
+
+  // ── helpers ───────────────────────────────────────────────────────────────
+  const inputCls = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0077B6] text-sm';
+  const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
+
+  const msgBanner = (msg: { type: 'ok' | 'err'; text: string } | null) =>
+    msg ? (
+      <div className={`text-sm px-4 py-2 rounded-lg ${msg.type === 'ok' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+        {msg.text}
+      </div>
+    ) : null;
+
+  // ── save company ──────────────────────────────────────────────────────────
+  const saveCompany = async () => {
+    if (!compForm.name.trim()) return setCompMsg({ type: 'err', text: 'Company name is required' });
+    setCompSaving(true); setCompMsg(null);
+    try {
+      const res = await fetch('/api/company/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name: compForm.name, email: compForm.email, phone: compForm.phone, address: compForm.address }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Failed to save');
+      setCompany(json.company);
+      setCompMsg({ type: 'ok', text: 'Company settings saved' });
+      setTimeout(() => setCompMsg(null), 4000);
+    } catch (e: any) {
+      setCompMsg({ type: 'err', text: e.message });
+    } finally { setCompSaving(false); }
+  };
+
+  // ── save account profile ──────────────────────────────────────────────────
+  const saveAccount = async () => {
+    if (!accForm.name.trim()) return setAccMsg({ type: 'err', text: 'Full name is required' });
+    setAccSaving(true); setAccMsg(null);
+    try {
+      const body = new FormData();
+      body.append('full_name', accForm.name);
+      body.append('phone_number', accForm.phone);
+      const res = await fetch('/api/users/profile', {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` },
+        body,
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || json.message || 'Failed to save');
+      if (signIn) await signIn(accessToken || '', { ...(user as any), name: json.user.name, phone: json.user.phone });
+      setAccMsg({ type: 'ok', text: 'Profile updated' });
+      setTimeout(() => setAccMsg(null), 4000);
+    } catch (e: any) {
+      setAccMsg({ type: 'err', text: e.message });
+    } finally { setAccSaving(false); }
+  };
+
+  // ── change password ───────────────────────────────────────────────────────
+  const changePassword = async () => {
+    if (!pwForm.current || !pwForm.newPw) return setPwMsg({ type: 'err', text: 'Fill in all fields' });
+    if (pwForm.newPw.length < 8) return setPwMsg({ type: 'err', text: 'New password must be at least 8 characters' });
+    if (pwForm.newPw !== pwForm.confirm) return setPwMsg({ type: 'err', text: 'Passwords do not match' });
+    setPwSaving(true); setPwMsg(null);
+    try {
+      const res = await fetch('/api/users/change-password', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ currentPassword: pwForm.current, newPassword: pwForm.newPw }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.message || json.error || 'Failed');
+      setPwForm({ current: '', newPw: '', confirm: '' });
+      setPwMsg({ type: 'ok', text: 'Password updated successfully' });
+      setTimeout(() => setPwMsg(null), 4000);
+    } catch (e: any) {
+      setPwMsg({ type: 'err', text: e.message });
+    } finally { setPwSaving(false); }
+  };
+
+  const tabs = [
+    { id: 'company', label: 'Company Profile' },
+    { id: 'account', label: 'My Account' },
+    { id: 'password', label: 'Change Password' },
+  ] as const;
+
   return (
-    <div className="bg-white rounded-2xl p-6 shadow-sm">
-      <h2 className="text-2xl font-['Montserrat'] font-bold text-[#2B2D42] mb-4">Settings</h2>
-      <p className="text-gray-600">Settings interface coming soon...</p>
+    <div className="space-y-6 max-w-3xl">
+      <div>
+        <h2 className="text-2xl font-bold text-[#2B2D42]">Settings</h2>
+        <p className="text-sm text-slate-500 mt-1">Manage your company profile and account preferences</p>
+      </div>
+
+      {/* Tab bar */}
+      <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
+        {tabs.map(t => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${tab === t.id ? 'bg-white text-[#0077B6] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Company Profile tab ─────────────────────────────────────────── */}
+      {tab === 'company' && (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-5">
+          <h3 className="text-base font-semibold text-slate-800">Company Information</h3>
+
+          {company && (
+            <div className="flex items-center gap-3 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3">
+              <div className="w-10 h-10 rounded-full bg-[#0077B6] flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                {(company.name || '?')[0].toUpperCase()}
+              </div>
+              <div>
+                <div className="font-semibold text-slate-900 text-sm">{company.name}</div>
+                <div className="text-xs text-slate-500 capitalize">{company.status} · {company.subscriptionStatus || 'inactive'}</div>
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className={labelCls}>Company Name *</label>
+              <input className={inputCls} value={compForm.name} onChange={e => setCompForm(f => ({ ...f, name: e.target.value }))} />
+            </div>
+            <div>
+              <label className={labelCls}>Contact Email</label>
+              <input type="email" className={inputCls} value={compForm.email} onChange={e => setCompForm(f => ({ ...f, email: e.target.value }))} placeholder="company@example.com" />
+            </div>
+            <div>
+              <label className={labelCls}>Phone Number</label>
+              <input className={inputCls} value={compForm.phone} onChange={e => setCompForm(f => ({ ...f, phone: e.target.value }))} placeholder="+250 7XX XXX XXX" />
+            </div>
+            <div>
+              <label className={labelCls}>Address</label>
+              <input className={inputCls} value={compForm.address} onChange={e => setCompForm(f => ({ ...f, address: e.target.value }))} placeholder="Kigali, Rwanda" />
+            </div>
+          </div>
+
+          {msgBanner(compMsg)}
+
+          <button
+            disabled={compSaving}
+            onClick={saveCompany}
+            className="bg-[#0077B6] text-white px-6 py-2.5 rounded-lg font-semibold text-sm disabled:opacity-60 hover:bg-[#005f8e] transition-colors"
+          >
+            {compSaving ? 'Saving…' : 'Save Company Settings'}
+          </button>
+        </div>
+      )}
+
+      {/* ── My Account tab ──────────────────────────────────────────────── */}
+      {tab === 'account' && (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-5">
+          <h3 className="text-base font-semibold text-slate-800">Administrator Profile</h3>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className={labelCls}>Full Name</label>
+              <input className={inputCls} value={accForm.name} onChange={e => setAccForm(f => ({ ...f, name: e.target.value }))} />
+            </div>
+            <div>
+              <label className={labelCls}>Phone Number</label>
+              <input className={inputCls} value={accForm.phone} onChange={e => setAccForm(f => ({ ...f, phone: e.target.value }))} placeholder="+250 7XX XXX XXX" />
+            </div>
+            <div className="sm:col-span-2">
+              <label className={labelCls}>Email</label>
+              <input className={`${inputCls} bg-gray-50 text-slate-400 cursor-not-allowed`} value={user?.email || ''} readOnly />
+              <p className="text-xs text-slate-400 mt-1">Email cannot be changed</p>
+            </div>
+          </div>
+
+          {msgBanner(accMsg)}
+
+          <button
+            disabled={accSaving}
+            onClick={saveAccount}
+            className="bg-[#0077B6] text-white px-6 py-2.5 rounded-lg font-semibold text-sm disabled:opacity-60 hover:bg-[#005f8e] transition-colors"
+          >
+            {accSaving ? 'Saving…' : 'Save Profile'}
+          </button>
+        </div>
+      )}
+
+      {/* ── Change Password tab ─────────────────────────────────────────── */}
+      {tab === 'password' && (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-4">
+          <h3 className="text-base font-semibold text-slate-800">Change Password</h3>
+
+          <div>
+            <label className={labelCls}>Current Password</label>
+            <input type="password" className={inputCls} value={pwForm.current} onChange={e => setPwForm(f => ({ ...f, current: e.target.value }))} />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className={labelCls}>New Password</label>
+              <input type="password" className={inputCls} value={pwForm.newPw} onChange={e => setPwForm(f => ({ ...f, newPw: e.target.value }))} />
+            </div>
+            <div>
+              <label className={labelCls}>Confirm New Password</label>
+              <input type="password" className={inputCls} value={pwForm.confirm} onChange={e => setPwForm(f => ({ ...f, confirm: e.target.value }))} />
+            </div>
+          </div>
+          <p className="text-xs text-slate-400">Minimum 8 characters with letters and numbers</p>
+
+          {msgBanner(pwMsg)}
+
+          <button
+            disabled={pwSaving}
+            onClick={changePassword}
+            className="bg-slate-800 text-white px-6 py-2.5 rounded-lg font-semibold text-sm disabled:opacity-60 hover:bg-slate-700 transition-colors"
+          >
+            {pwSaving ? 'Updating…' : 'Update Password'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

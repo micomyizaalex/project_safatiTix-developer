@@ -34,6 +34,10 @@ import DriverTracking from './pages/company/DriverTracking';
 import FirstLoginChange from './pages/FirstLoginChange';
 import AccountSettings from './pages/account/AccountSettings';
 import PaymentPage from './pages/commuter/PaymentPage';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
+import VerifyEmail from './pages/VerifyEmail';
+import ProfilePage from './pages/user/ProfilePage';
 
 const App = () => {
   return (
@@ -80,6 +84,10 @@ const App = () => {
             </Route>
 
             <Route path='/first-login-change' element={<FirstLoginChange/>} />
+            <Route path='/forgot-password' element={<ForgotPassword/>} />
+            <Route path='/reset-password' element={<ResetPassword/>} />
+            <Route path='/verify-email' element={<VerifyEmail/>} />
+            <Route path='/profile' element={<RequireRole allowed={["commuter","company_admin","driver","admin"]}><ProfilePage/></RequireRole>} />
 
             {/* Alias dashboard routes */}
             <Route path='/driver/dashboard' element={<Layout />}>

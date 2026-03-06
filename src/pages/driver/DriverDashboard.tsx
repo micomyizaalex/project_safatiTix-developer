@@ -8,6 +8,7 @@ import {
 import { BrowserQRCodeReader } from '@zxing/browser';
 import DriverTracking from '../../components/DriverTracking';
 import { useNavigate as _useNavigate } from 'react-router-dom';
+import NotificationBell from '../../components/NotificationBell';
 
 // ==================== SAMPLE DATA ====================
 const driverData = {
@@ -281,10 +282,7 @@ export default function DriverDashboard() {
             </div>
             <span className="font-black text-slate-900">SafariTix</span>
           </div>
-          <button className="relative w-10 h-10 flex items-center justify-center rounded-lg hover:bg-slate-100">
-            <Bell className="w-5 h-5 text-slate-700" />
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full"></span>
-          </button>
+          <NotificationBell />
         </div>
       </header>
 
@@ -300,7 +298,7 @@ export default function DriverDashboard() {
           {activeView === 'trips' && <TripsView trips={trips} loading={tripsLoading} error={tripsError} onStartTrip={handleStartTrip} />}
           {activeView === 'passengers' && <PassengersView setShowScanner={setShowScanner} />}
           {activeView === 'tracking' && <TrackingView schedule={selectedScheduleForTracking} onTripStarted={handleTripStarted} onTripEnded={handleTripEnded} />}
-          {activeView === 'profile' && <ProfileView />}
+          {activeView === 'profile' && <ProfileView driverName={driverName} driverContext={driverContext} companyName={companyName} />}
         </div>
       </main>
 
@@ -745,7 +743,8 @@ function TrackingView({ schedule, onTripStarted, onTripEnded }: { schedule: any 
 }
 
 // ==================== PROFILE VIEW ====================
-function ProfileView() {
+function ProfileView({ driverName, driverContext, companyName }: { driverName: string | null, driverContext: any, companyName: string | null }) {
+  const { user } = useAuth();
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <h1 className="text-2xl lg:text-3xl font-black text-slate-900">Profile</h1>
@@ -757,8 +756,8 @@ function ProfileView() {
             <User className="w-10 h-10 text-white" />
           </div>
           <div className="flex-1">
-            <div className="text-2xl font-black mb-1">{(driverContext?.name || driverName || user?.full_name || driverData.name)}</div>
-            <div className="text-white/80 text-sm">{(companyName || driverContext?.id || user?.companyName || driverData.id)}</div>
+            <div className="text-2xl font-black mb-1">{driverContext?.name || driverName || (user as any)?.full_name || driverData.name}</div>
+            <div className="text-white/80 text-sm">{companyName || driverContext?.id || (user as any)?.companyName || driverData.id}</div>
           </div>
           <button className="bg-white/20 border-2 border-white/30 text-white px-6 py-2 rounded-lg font-bold hover:bg-white/30 transition-all">
             Edit

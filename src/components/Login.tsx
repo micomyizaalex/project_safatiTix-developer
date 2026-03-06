@@ -17,12 +17,27 @@ export function Login() {
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  
+  const [emailNotVerified, setEmailNotVerified] = useState<string | null>(null); // holds email when 403
+  const [resendLoading, setResendLoading] = useState(false);
+  const [resendSent, setResendSent] = useState(false);
+
   // Login state
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const { signIn } = useAuth();
   const navigate = useNavigate();
+
+  async function handleResend() {
+    if (!emailNotVerified) return;
+    setResendLoading(true);
+    await fetch('/api/auth/resend-verification', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: emailNotVerified }),
+    }).catch(() => {});
+    setResendLoading(false);
+    setResendSent(true);
+  }
 
   async function handleLogin(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -45,6 +60,10 @@ export function Login() {
       const data = await response.json();
 
       if (!response.ok) {
+        if (response.status === 403 && data.code === 'EMAIL_NOT_VERIFIED') {
+          setEmailNotVerified(data.email || loginEmail);
+          throw new Error(data.error);
+        }
         throw new Error(data.error || 'Invalid credentials');
       }
 
@@ -429,10 +448,30 @@ export function Login() {
 
           {/* Error/Success Messages */}
           {error && (
-            <Alert className="mb-4 bg-red-50 border-red-200" style={{ marginBottom: '20px' }}>
+            <Alert className="mb-4 bg-red-50 border-red-200" style={{ marginBottom: emailNotVerified ? '8px' : '20px' }}>
               <AlertCircle style={{ width: '16px', height: '16px', color: '#E63946' }} />
               <AlertDescription style={{ color: '#991B1B' }}>{error}</AlertDescription>
             </Alert>
+          )}
+
+          {emailNotVerified && (
+            <div style={{ background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '10px', padding: '12px 16px', marginBottom: '20px', fontSize: '14px' }}>
+              {resendSent ? (
+                <span style={{ color: '#15803d' }}>✓ A new verification link has been sent to <strong>{emailNotVerified}</strong>.</span>
+              ) : (
+                <>
+                  <span style={{ color: '#92400e' }}>Didn't get the email? </span>
+                  <button
+                    type="button"
+                    onClick={handleResend}
+                    disabled={resendLoading}
+                    style={{ background: 'none', border: 'none', color: '#0077B6', fontWeight: '600', cursor: resendLoading ? 'not-allowed' : 'pointer', padding: 0, fontSize: '14px' }}
+                  >
+                    {resendLoading ? 'Sending…' : 'Resend verification email'}
+                  </button>
+                </>
+              )}
+            </div>
           )}
 
           {successMessage && (

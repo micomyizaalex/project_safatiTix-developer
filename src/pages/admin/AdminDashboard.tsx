@@ -202,8 +202,9 @@ export default function AdminDashboard() {
         plan: c.subscriptionPlan || 'Free Trial',
         status: c.status === 'approved' ? 'active' : c.status,
         subscriptionEnd: c.updatedAt,
-        buses: busesByCompanyId[c.id] || 0,
-        tickets: ticketsByCompanyId[c.id]?.count || 0,
+        buses:   c.busCount   ?? busesByCompanyId[c.id] ?? 0,
+        drivers: c.driverCount ?? 0,
+        tickets: ticketsByCompanyId[c.id]?.count   || 0,
         revenue: ticketsByCompanyId[c.id]?.revenue || 0,
       }));
 
@@ -259,15 +260,16 @@ export default function AdminDashboard() {
   };
 
   const modules = [
-    { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard', badge: null },
-    { id: 'users', icon: Users, label: 'User Management', badge: users.length > 0 ? users.length.toLocaleString() : null },
-    { id: 'companies', icon: Building2, label: 'Companies', badge: companies.length > 0 ? companies.length.toString() : null },
-    { id: 'buses', icon: Bus, label: 'Buses & Routes', badge: buses.length > 0 ? buses.length.toString() : null },
-    { id: 'rura-routes', icon: Navigation, label: 'RURA Routes', badge: null },
-    { id: 'tickets', icon: Ticket, label: 'Tickets', badge: dashboardStats.ticketsToday > 0 ? dashboardStats.ticketsToday.toString() : null },
-    { id: 'tracking', icon: MapPin, label: 'Live Tracking', badge: null },
-    { id: 'analytics', icon: BarChart3, label: 'Analytics', badge: null },
-    { id: 'settings', icon: Settings, label: 'Settings', badge: null },
+    { id: 'dashboard',       icon: LayoutDashboard, label: 'Dashboard',       badge: null },
+    { id: 'users',           icon: Users,           label: 'User Management', badge: users.length > 0 ? users.length.toLocaleString() : null },
+    { id: 'companies',       icon: Building2,       label: 'Companies',       badge: companies.length > 0 ? companies.length.toString() : null },
+    { id: 'buses',           icon: Bus,             label: 'Buses & Routes',  badge: buses.length > 0 ? buses.length.toString() : null },
+    { id: 'rura-routes',     icon: Navigation,      label: 'RURA Routes',     badge: null },
+    { id: 'tickets',         icon: Ticket,          label: 'Tickets',         badge: dashboardStats.ticketsToday > 0 ? dashboardStats.ticketsToday.toString() : null },
+    { id: 'tracking',        icon: MapPin,          label: 'Live Tracking',   badge: null },
+    { id: 'analytics',       icon: BarChart3,       label: 'Analytics',       badge: null },
+    { id: 'activity-logs',   icon: Activity,        label: 'Activity Logs',   badge: null },
+    { id: 'settings',        icon: Settings,        label: 'Settings',        badge: null },
   ];
 
   if (loading) {
@@ -427,6 +429,7 @@ export default function AdminDashboard() {
             />
           )}
           {activeModule === 'settings' && <SettingsView />}
+          {activeModule === 'activity-logs' && <ActivityLogsView />}
         </main>
       </div>
     </div>
@@ -491,8 +494,8 @@ function DashboardView({ stats, companies, recentTickets, revenueData, subscript
         <StatCard
           icon={Bus}
           label="Active Buses"
-          value={stats.activeBuses}
-          change={`+${stats.growth.buses}%`}
+          value={stats.activeBuses ?? stats.totalBuses ?? 0}
+          change={`+${stats.growth?.buses ?? 0}%`}
           trend="up"
           color={COLORS.primary}
         />
@@ -916,13 +919,13 @@ function CompanyManagement({ companies }: CompanyManagementProps) {
   // Extended company data with more fields
   const companiesData = companies.map(c => ({
     ...c,
-    email: c.email || `contact@${c.name.toLowerCase().replace(/\s+/g, '')}.com`,
-    phone: c.phone || '+250788' + Math.floor(Math.random() * 1000000).toString().padStart(6, '0'),
-    registeredOn: c.createdAt || '2024-01-15',
+    email: c.email || '',
+    phone: c.phone || '',
+    registeredOn: c.createdAt || '',
     trialStart: c.plan === 'Free Trial' ? c.createdAt : null,
     trialEnd: c.plan === 'Free Trial' && c.createdAt ? new Date(new Date(c.createdAt).getTime() + 14 * 24 * 60 * 60 * 1000).toISOString() : null,
     nextPayment: c.plan !== 'Free Trial' && c.subscriptionEnd ? c.subscriptionEnd : null,
-    drivers: c.drivers || Math.floor(Math.random() * 30) + 10,
+    drivers: c.drivers ?? 0,
   }));
 
   // Filter and sort
@@ -1453,8 +1456,8 @@ function BusManagement({ buses }: BusManagementProps) {
                       <div className="text-sm text-gray-500">{bus.model}</div>
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-600">{bus.company}</td>
-                  <td className="px-6 py-4 text-sm text-gray-900 font-semibold">{bus.driver}</td>
+                  <td className="px-6 py-4 text-sm text-gray-600">{bus.companyName}</td>
+                  <td className="px-6 py-4 text-sm text-gray-900 font-semibold">{bus.driverName || '—'}</td>
                   <td className="px-6 py-4 text-sm text-gray-900">{bus.capacity} seats</td>
                   <td className="px-6 py-4">
                     <span className={`px-3 py-1 rounded-full text-xs font-bold ${
@@ -1463,7 +1466,9 @@ function BusManagement({ buses }: BusManagementProps) {
                       {bus.status}
                     </span>
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-600">{bus.lastService}</td>
+                  <td className="px-6 py-4 text-sm text-gray-600">
+                    {bus.createdAt ? new Date(bus.createdAt).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' }) : '—'}
+                  </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center justify-end gap-2">
                       <button className="p-2 hover:bg-gray-100 rounded-lg">
@@ -2657,6 +2662,247 @@ function SettingsView() {
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ==================== ACTIVITY LOGS ====================
+function ActivityLogsView() {
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+  const authHeaders: Record<string, string> = {};
+  if (token) authHeaders['Authorization'] = `Bearer ${token}`;
+
+  const [logs,         setLogs]         = React.useState<any[]>([]);
+  const [total,        setTotal]        = React.useState(0);
+  const [loading,      setLoading]      = React.useState(true);
+  const [page,         setPage]         = React.useState(1);
+  const LIMIT = 50;
+
+  // Filters
+  const [filterAction,   setFilterAction]   = React.useState('');
+  const [filterMethod,   setFilterMethod]   = React.useState('');
+  const [filterDateFrom, setFilterDateFrom] = React.useState('');
+  const [filterDateTo,   setFilterDateTo]   = React.useState('');
+  const [filterUser,     setFilterUser]     = React.useState('');
+
+  const fetchLogs = React.useCallback(async (pg = 1) => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ page: String(pg), limit: String(LIMIT) });
+      if (filterAction.trim())   params.set('action',    filterAction.trim());
+      if (filterMethod)          params.set('method',    filterMethod);
+      if (filterDateFrom)        params.set('date_from', filterDateFrom);
+      if (filterDateTo)          params.set('date_to',   filterDateTo);
+      if (filterUser.trim())     params.set('user_id',   filterUser.trim());
+
+      const res = await fetch(`/api/admin/activity-logs?${params}`, { headers: authHeaders });
+      if (!res.ok) throw new Error('Failed to fetch activity logs');
+      const j = await res.json();
+      setLogs(j.logs || []);
+      setTotal(j.total || 0);
+      setPage(pg);
+    } catch (e: any) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  }, [filterAction, filterMethod, filterDateFrom, filterDateTo, filterUser]);
+
+  React.useEffect(() => { fetchLogs(1); }, []);
+
+  const applyFilters = () => fetchLogs(1);
+  const clearFilters = () => {
+    setFilterAction(''); setFilterMethod(''); setFilterDateFrom('');
+    setFilterDateTo(''); setFilterUser('');
+    setTimeout(() => fetchLogs(1), 0);
+  };
+
+  // CSV export
+  const exportCSV = () => {
+    if (!logs.length) return;
+    const header = ['Time', 'User', 'Email', 'Role', 'Action', 'Method', 'Path', 'Status', 'IP'];
+    const rows = logs.map(l => [
+      l.created_at ? new Date(l.created_at).toLocaleString() : '',
+      l.user_name  || '',
+      l.user_email || '',
+      l.user_role  || '',
+      l.action     || '',
+      l.method     || '',
+      l.path       || '',
+      l.status_code ?? '',
+      l.ip_address || '',
+    ]);
+    const csv = [header, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `activity_logs_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+  };
+
+  const totalPages = Math.max(1, Math.ceil(total / LIMIT));
+
+  const methodColor: Record<string, string> = {
+    GET:    'bg-blue-100 text-blue-800',
+    POST:   'bg-green-100 text-green-800',
+    PATCH:  'bg-yellow-100 text-yellow-800',
+    PUT:    'bg-orange-100 text-orange-800',
+    DELETE: 'bg-red-100 text-red-800',
+  };
+
+  return (
+    <div className="max-w-7xl mx-auto space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl lg:text-3xl font-black font-['Montserrat'] text-[#2B2D42]">Activity Logs</h1>
+          <p className="text-gray-500 text-sm mt-1">{total.toLocaleString()} total records</p>
+        </div>
+        <button
+          onClick={exportCSV}
+          className="flex items-center gap-2 px-4 py-2 bg-[#0077B6] text-white rounded-xl font-semibold hover:bg-[#005F8E] transition-all text-sm"
+        >
+          <Download className="w-4 h-4" /> Export CSV
+        </button>
+      </div>
+
+      {/* Filters */}
+      <div className="bg-white rounded-2xl p-4 border border-gray-200">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <input
+            type="text"
+            placeholder="Search action..."
+            value={filterAction}
+            onChange={e => setFilterAction(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && applyFilters()}
+            className="col-span-2 sm:col-span-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0077B6]"
+          />
+          <select
+            value={filterMethod}
+            onChange={e => setFilterMethod(e.target.value)}
+            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0077B6]"
+          >
+            <option value="">All Methods</option>
+            {['GET','POST','PATCH','PUT','DELETE'].map(m => <option key={m}>{m}</option>)}
+          </select>
+          <input
+            type="date"
+            value={filterDateFrom}
+            onChange={e => setFilterDateFrom(e.target.value)}
+            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0077B6]"
+          />
+          <input
+            type="date"
+            value={filterDateTo}
+            onChange={e => setFilterDateTo(e.target.value)}
+            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0077B6]"
+          />
+          <button
+            onClick={applyFilters}
+            className="flex items-center justify-center gap-1 bg-[#0077B6] text-white rounded-lg px-4 py-2 text-sm font-semibold hover:bg-[#005F8E]"
+          >
+            <Filter className="w-3.5 h-3.5" /> Apply
+          </button>
+          <button
+            onClick={clearFilters}
+            className="flex items-center justify-center gap-1 border border-gray-200 text-gray-600 rounded-lg px-4 py-2 text-sm hover:bg-gray-50"
+          >
+            <RotateCcw className="w-3.5 h-3.5" /> Clear
+          </button>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+        {loading ? (
+          <div className="flex items-center justify-center py-20">
+            <Loader2 className="w-8 h-8 text-[#0077B6] animate-spin" />
+          </div>
+        ) : logs.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+            <Activity className="w-12 h-12 mb-3 opacity-30" />
+            <p className="font-semibold">No activity logs found</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  {['Time', 'User', 'Role', 'Action', 'Method', 'Path', 'Status', 'IP'].map(h => (
+                    <th key={h} className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {logs.map((log, i) => (
+                  <tr key={log.id || i} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-3 whitespace-nowrap text-gray-500 text-xs">
+                      {log.created_at ? new Date(log.created_at).toLocaleString('en-GB', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '—'}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="font-semibold text-gray-900 truncate max-w-[130px]">{log.user_name || '—'}</div>
+                      <div className="text-xs text-gray-400 truncate max-w-[130px]">{log.user_email || ''}</div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+                        log.user_role === 'admin'         ? 'bg-purple-100 text-purple-700' :
+                        log.user_role === 'company_admin'  ? 'bg-blue-100   text-blue-700'   :
+                        log.user_role === 'driver'          ? 'bg-green-100  text-green-700'  :
+                                                             'bg-gray-100   text-gray-700'
+                      }`}>{log.user_role || '—'}</span>
+                    </td>
+                    <td className="px-4 py-3 max-w-[200px]">
+                      <span className="text-gray-800 text-xs">{log.action || '—'}</span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-0.5 rounded text-xs font-bold ${methodColor[log.method || ''] || 'bg-gray-100 text-gray-600'}`}>
+                        {log.method || '—'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 max-w-[200px]">
+                      <span className="text-gray-500 text-xs font-mono truncate block">{log.path || '—'}</span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-0.5 rounded text-xs font-bold ${
+                        !log.status_code           ? 'bg-gray-100 text-gray-500' :
+                        log.status_code < 300      ? 'bg-green-100 text-green-700' :
+                        log.status_code < 400      ? 'bg-yellow-100 text-yellow-700' :
+                                                     'bg-red-100 text-red-700'
+                      }`}>{log.status_code ?? '—'}</span>
+                    </td>
+                    <td className="px-4 py-3 text-gray-400 text-xs font-mono whitespace-nowrap">{log.ip_address || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Pagination */}
+        {!loading && totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 bg-gray-50 text-sm">
+            <span className="text-gray-500">
+              Page {page} of {totalPages} &nbsp;•&nbsp; {total.toLocaleString()} records
+            </span>
+            <div className="flex gap-2">
+              <button
+                disabled={page <= 1}
+                onClick={() => fetchLogs(page - 1)}
+                className="px-3 py-1 rounded-lg border border-gray-200 text-gray-600 disabled:opacity-40 hover:bg-white"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <button
+                disabled={page >= totalPages}
+                onClick={() => fetchLogs(page + 1)}
+                className="px-3 py-1 rounded-lg border border-gray-200 text-gray-600 disabled:opacity-40 hover:bg-white"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

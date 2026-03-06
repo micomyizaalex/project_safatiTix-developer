@@ -33,6 +33,7 @@ export default function SignupPage() {
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [registeredEmail, setRegisteredEmail] = useState<string | null>(null); // set after successful signup
 
   // Signup state
   const [signupEmail, setSignupEmail] = useState("");
@@ -84,8 +85,7 @@ export default function SignupPage() {
         throw new Error(data.error || "Signup failed");
       }
 
-      setSuccessMessage("Account created successfully!");
-
+      // company_admin gets a token (auto-approved) — log them in directly
       if (data.token) {
         localStorage.setItem("token", data.token);
         localStorage.setItem("user", JSON.stringify(data.user));
@@ -100,9 +100,8 @@ export default function SignupPage() {
         return;
       }
 
-      setTimeout(() => {
-        window.location.href = "/app/login";
-      }, 1200);
+      // All other roles: email verification required
+      setRegisteredEmail(data.email || signupEmail);
     } catch (err: any) {
       setError(err.message || "Failed to create account. Please try again.");
     } finally {
@@ -393,6 +392,42 @@ export default function SignupPage() {
       zIndex: 1,
     },
   };
+
+  // Show "check your email" screen after successful registration
+  if (registeredEmail) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f3f4f6', padding: '24px' }}>
+        <div style={{ background: 'white', borderRadius: '16px', padding: '48px 40px', maxWidth: '440px', width: '100%', boxShadow: '0 4px 24px rgba(0,0,0,0.08)', textAlign: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', marginBottom: '32px' }}>
+            <div style={{ width: '36px', height: '36px', background: SAFARITIX.primary, borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
+              <Bus size={20} />
+            </div>
+            <span style={{ fontSize: '20px', fontWeight: '700', color: '#2B2D42' }}>SafariTix</span>
+          </div>
+          <div style={{ width: '64px', height: '64px', background: '#dcfce7', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
+            <Check size={32} color="#16a34a" />
+          </div>
+          <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#2B2D42', marginBottom: '12px' }}>Check your email</h2>
+          <p style={{ color: '#6b7280', fontSize: '15px', lineHeight: '1.6', marginBottom: '24px' }}>
+            We sent a verification link to <strong>{registeredEmail}</strong>.<br />
+            Click the link to activate your account before logging in.
+          </p>
+          <p style={{ color: '#9ca3af', fontSize: '13px', marginBottom: '20px' }}>Didn't receive it? Check your spam folder, or{' '}
+            <button
+              onClick={async () => {
+                await fetch('/api/auth/resend-verification', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: registeredEmail }) });
+                alert('A new verification email has been sent.');
+              }}
+              style={{ background: 'none', border: 'none', color: SAFARITIX.primary, fontWeight: '600', cursor: 'pointer', fontSize: '13px', padding: 0 }}
+            >resend it</button>.
+          </p>
+          <Link to="/login" style={{ display: 'inline-block', padding: '12px 28px', background: SAFARITIX.primary, color: 'white', textDecoration: 'none', borderRadius: '8px', fontWeight: '600', fontSize: '15px' }}>
+            Go to Login
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={styles.container}>

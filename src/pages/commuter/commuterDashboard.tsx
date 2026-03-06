@@ -38,6 +38,8 @@ import {
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useAuth } from '../../components/AuthContext';
+import AccountSettings from '../account/AccountSettings';
+import NotificationBell from '../../components/NotificationBell';
 
 // ========================================
 // COMMUTER DASHBOARD - REDESIGNED
@@ -1007,10 +1009,7 @@ export default function CommuterDashboard() {
             <span className="font-black text-xl text-gray-900">SafariTix</span>
           </div>
 
-          <button className="relative w-10 h-10 flex items-center justify-center rounded-xl hover:bg-gray-100">
-            <Bell className="w-5 h-5 text-gray-700" />
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full"></span>
-          </button>
+          <NotificationBell />
         </div>
       </header>
 
@@ -1491,11 +1490,7 @@ export default function CommuterDashboard() {
             </div>
           )}
           {activeTab === 'profile' && (
-            <div className="text-center py-20">
-              <User className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-              <h3 className="text-2xl font-bold text-gray-900 mb-2">Profile Settings</h3>
-              <p className="text-gray-600">Manage your account here</p>
-            </div>
+            <AccountSettings />
           )}
           {activeTab === 'help' && (
             <div className="text-center py-20">

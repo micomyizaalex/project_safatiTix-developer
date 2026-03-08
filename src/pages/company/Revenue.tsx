@@ -46,7 +46,7 @@ export default function Revenue() {
     { day: 'Sat', value: 0 },
     { day: 'Sun', value: 0 },
   ]);
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+  const API_URL = import.meta.env.VITE_API_URL || 'https://backend-7cxc.onrender.com/api/$1/api';
 
   useEffect(() => {
     fetchRevenueData();

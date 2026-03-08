@@ -64,7 +64,7 @@
       proxy: {
         // Proxy API requests during development to the LOCAL backend server
         '/api': {
-          target: 'http://localhost:5000',
+          target: 'https://backend-7cxc.onrender.com/api/$1',
           changeOrigin: true,
           secure: false,
           rewrite: (path) => path.replace(/^\/api/, '/api')

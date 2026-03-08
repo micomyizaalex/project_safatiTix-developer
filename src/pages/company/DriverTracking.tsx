@@ -29,7 +29,7 @@ export default function DriverTracking() {
   const [error, setError] = useState<string>('');
   const [busId, setBusId] = useState<string>('');
   const [locationInterval, setLocationInterval] = useState<NodeJS.Timeout | null>(null);
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+  const API_URL = import.meta.env.VITE_API_URL || 'https://backend-7cxc.onrender.com/api/$1/api';
 
   // Check for active trip on mount
   useEffect(() => {

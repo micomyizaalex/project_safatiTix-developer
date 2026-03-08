@@ -111,7 +111,7 @@ export default function CompanyFleetTracking({ token, activeBuses }: CompanyFlee
       setLoading(true);
       setError(null);
 
-      const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || 'https://backend-7cxc.onrender.com/api/$1';
 
       // Fetch all company schedules
       const schedulesRes = await fetch(`${baseUrl}/api/company/schedules`, {
@@ -370,7 +370,7 @@ export default function CompanyFleetTracking({ token, activeBuses }: CompanyFlee
     }
 
     try {
-      const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || 'https://backend-7cxc.onrender.com/api/$1';
       const res = await fetch(`${baseUrl}/api/tracking/schedule/${bus.scheduleId}/location`, {
         headers: {
           Authorization: `Bearer ${token}`,

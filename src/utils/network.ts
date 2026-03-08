@@ -1,4 +1,4 @@
-const DEFAULT_BACKEND_ORIGIN = 'http://localhost:5000';
+const DEFAULT_BACKEND_ORIGIN = 'https://backend-7cxc.onrender.com/api/$1';
 
 const trimTrailingSlash = (value: string) => value.replace(/\/+$/, '');
 

@@ -25,6 +25,8 @@ type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 const hasGoogleMapsKey = typeof GOOGLE_MAPS_API_KEY === 'string' && GOOGLE_MAPS_API_KEY.trim().length > 0;
 const DEFAULT_CENTER: google.maps.LatLngLiteral = { lat: -1.9441, lng: 30.0619 };
+const LOCATION_EMIT_INTERVAL_MS = 5000;
+
 const DriverTracking: React.FC<DriverTrackingProps> = ({
   scheduleId,
   initialStatus = 'scheduled',
@@ -53,39 +55,291 @@ const DriverTracking: React.FC<DriverTrackingProps> = ({
   const socketRef = useRef<Socket | null>(null);
   const watchIdRef = useRef<number | null>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
+  const latestLocationRef = useRef<LocationData | null>(null);
+  const sendIntervalRef = useRef<number | null>(null);
+  const rejoinTimeoutRef = useRef<number | null>(null);
 
   const { isLoaded } = useJsApiLoader({
     id: 'driver-tracking-map',
     googleMapsApiKey: GOOGLE_MAPS_API_KEY || '',
   });
 
-  const busIcon = useMemo(() => {
-    return {
-      url: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="%230077B6"/><path d="M7 6h10a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-1v1.5a1 1 0 1 1-2 0V16h-4v1.5a1 1 0 1 1-2 0V16H7a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Zm1 2v3h8V8H8Zm1 5.25a1 1 0 1 0 0 2 1 1 0 0 0 0-2Zm6 0a1 1 0 1 0 0 2 1 1 0 0 0 0-2Z" fill="white"/></svg>',
-    } as google.maps.Icon;
-  }, [currentLocation]);
+  const busIcon = useMemo(() => ({
+    url: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="%230077B6"/><path d="M7 6h10a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-1v1.5a1 1 0 1 1-2 0V16h-4v1.5a1 1 0 1 1-2 0V16H7a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Zm1 2v3h8V8H8Zm1 5.25a1 1 0 1 0 0 2 1 1 0 0 0 0-2Zm6 0a1 1 0 1 0 0 2 1 1 0 0 0 0-2Z" fill="white"/></svg>',
+  } as google.maps.Icon), []);
 
   const getAuthToken = () => localStorage.getItem('accessToken') || localStorage.getItem('token');
 
-  useEffect(() => {
-    if (tripStatus === 'ACTIVE') {
-      const accessToken = getAuthToken();
-      if (accessToken) {
-        initializeSocket(accessToken);
-        startLocationTracking();
+  const upsertHistoryPoint = (locationData: LocationData) => {
+    setLocationHistory((prev) => {
+      const nextPoint = { lat: locationData.latitude, lng: locationData.longitude };
+      const lastPoint = prev[prev.length - 1];
+      if (lastPoint && lastPoint.lat === nextPoint.lat && lastPoint.lng === nextPoint.lng) {
+        return prev;
       }
+      return [...prev, nextPoint].slice(-100);
+    });
+  };
+
+  const applyLocationSample = (locationData: LocationData) => {
+    latestLocationRef.current = locationData;
+    setCurrentLocation(locationData);
+    upsertHistoryPoint(locationData);
+  };
+
+  const requestSingleLocation = () => new Promise<LocationData>((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        resolve({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          speed: position.coords.speed,
+          heading: position.coords.heading,
+          timestamp: position.timestamp,
+        });
+      },
+      (geoError) => reject(geoError),
+      {
+        enableHighAccuracy: true,
+        maximumAge: 0,
+        timeout: 10000,
+      }
+    );
+  });
+
+  const fetchLatestStoredLocation = async (accessToken: string) => {
+    try {
+      const response = await fetch(apiUrl(`/api/tracking/schedule/${scheduleId}/location`), {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        return;
+      }
+
+      const data = await response.json();
+      if (Array.isArray(data.history) && data.history.length > 0) {
+        const history = data.history.map((point: any) => ({
+          latitude: point.latitude,
+          longitude: point.longitude,
+          speed: point.speed,
+          heading: point.heading,
+          timestamp: Number(new Date(point.timestamp)),
+        }));
+
+        const latest = history[history.length - 1] || null;
+        if (latest) {
+          latestLocationRef.current = latest;
+          setCurrentLocation(latest);
+          setLocationHistory(history.map((point) => ({ lat: point.latitude, lng: point.longitude })));
+        }
+      } else if (data.hasLocation && data.location) {
+        const latest = {
+          latitude: data.location.latitude,
+          longitude: data.location.longitude,
+          speed: data.location.speed,
+          heading: data.location.heading,
+          timestamp: Number(new Date(data.location.timestamp)),
+        };
+        latestLocationRef.current = latest;
+        setCurrentLocation(latest);
+        setLocationHistory([{ lat: latest.latitude, lng: latest.longitude }]);
+      }
+    } catch (loadError) {
+      console.error('Failed to load latest stored location:', loadError);
     }
-  }, []);
+  };
+
+  const persistLocationUpdate = async (locationData: LocationData) => {
+    const accessToken = getAuthToken();
+    if (!accessToken) {
+      return;
+    }
+
+    try {
+      const response = await fetch(apiUrl('/api/tracking/driver/location'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          scheduleId,
+          latitude: locationData.latitude,
+          longitude: locationData.longitude,
+          speed: locationData.speed !== null ? Math.max(0, locationData.speed * 3.6) : null,
+          heading: locationData.heading,
+        }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to update location');
+      }
+
+      setError(null);
+
+      if (data.location) {
+        applyLocationSample({
+          latitude: data.location.latitude,
+          longitude: data.location.longitude,
+          speed: data.location.speed,
+          heading: data.location.heading,
+          timestamp: Number(new Date(data.location.recorded_at)),
+        });
+      }
+    } catch (persistError) {
+      const message = persistError instanceof Error ? persistError.message : 'Failed to update location';
+      setError(message);
+      console.error('Failed to persist GPS update:', persistError);
+    }
+  };
+
+  const stopLocationTracking = () => {
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
+    }
+
+    if (sendIntervalRef.current !== null) {
+      window.clearInterval(sendIntervalRef.current);
+      sendIntervalRef.current = null;
+    }
+
+    if (rejoinTimeoutRef.current !== null) {
+      window.clearTimeout(rejoinTimeoutRef.current);
+      rejoinTimeoutRef.current = null;
+    }
+  };
+
+  const initializeSocket = (accessToken: string) => {
+    if (socketRef.current) {
+      socketRef.current.disconnect();
+      socketRef.current = null;
+    }
+
+    const socket = io(SOCKET_ORIGIN, {
+      ...socketOptions,
+      auth: { token: accessToken },
+    });
+
+    setConnectionStatus('connecting');
+
+    socket.on('connect', () => {
+      setError(null);
+      setConnectionStatus('connected');
+      socket.emit('driver:joinSchedule', { scheduleId });
+    });
+
+    socket.on('driver:joinedSchedule', () => {
+      setError(null);
+      setConnectionStatus('connected');
+    });
+
+    socket.on('disconnect', () => {
+      setConnectionStatus('connecting');
+    });
+
+    socket.io.on('reconnect_attempt', () => {
+      setConnectionStatus('connecting');
+    });
+
+    socket.io.on('reconnect', () => {
+      setError(null);
+      setConnectionStatus('connected');
+      socket.emit('driver:joinSchedule', { scheduleId });
+    });
+
+    socket.on('connect_error', (connectError) => {
+      console.error('Driver tracking socket connection error:', connectError);
+      setConnectionStatus('connecting');
+    });
+
+    socket.on('error', (data: { message: string }) => {
+      setError(data.message);
+      setConnectionStatus('error');
+
+      if (rejoinTimeoutRef.current !== null) {
+        window.clearTimeout(rejoinTimeoutRef.current);
+      }
+
+      rejoinTimeoutRef.current = window.setTimeout(() => {
+        if (socket.connected) {
+          setConnectionStatus('connecting');
+          socket.emit('driver:joinSchedule', { scheduleId });
+        }
+      }, 2000);
+    });
+
+    socketRef.current = socket;
+  };
+
+  const startLocationTracking = (persistImmediately = true) => {
+    if (!navigator.geolocation) {
+      setError('Geolocation is not supported by your browser');
+      return;
+    }
+
+    stopLocationTracking();
+
+    if (persistImmediately) {
+      requestSingleLocation()
+        .then((initialLocation) => {
+          applyLocationSample(initialLocation);
+          void persistLocationUpdate(initialLocation);
+        })
+        .catch((geoError: GeolocationPositionError | Error) => {
+          setError(`Location error: ${geoError.message}`);
+        });
+    }
+
+    sendIntervalRef.current = window.setInterval(() => {
+      if (latestLocationRef.current) {
+        void persistLocationUpdate(latestLocationRef.current);
+      }
+    }, LOCATION_EMIT_INTERVAL_MS);
+
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        applyLocationSample({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          speed: position.coords.speed,
+          heading: position.coords.heading,
+          timestamp: position.timestamp,
+        });
+      },
+      (geoError) => {
+        setError(`Location error: ${geoError.message}`);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 5000,
+        maximumAge: 1000,
+      }
+    );
+
+    watchIdRef.current = watchId;
+  };
 
   useEffect(() => {
-    return () => {
-      if (watchIdRef.current !== null) {
-        navigator.geolocation.clearWatch(watchIdRef.current);
-      }
-      if (socketRef.current) {
-        socketRef.current.disconnect();
-      }
-    };
+    const accessToken = getAuthToken();
+    if (!accessToken || tripStatus !== 'ACTIVE') {
+      return;
+    }
+
+    void fetchLatestStoredLocation(accessToken);
+    initializeSocket(accessToken);
+    startLocationTracking(true);
+  }, []);
+
+  useEffect(() => () => {
+    stopLocationTracking();
+    if (socketRef.current) {
+      socketRef.current.disconnect();
+    }
   }, []);
 
   const startTrip = async () => {
@@ -98,28 +352,46 @@ const DriverTracking: React.FC<DriverTrackingProps> = ({
         throw new Error('Authentication required');
       }
 
-      const response = await fetch(apiUrl('/api/driver/start-trip'), {
+      const initialLocation = await requestSingleLocation();
+      applyLocationSample(initialLocation);
+
+      const response = await fetch(apiUrl('/api/tracking/driver/trip/start'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${accessToken}`,
         },
-        body: JSON.stringify({ scheduleId }),
+        body: JSON.stringify({
+          scheduleId,
+          latitude: initialLocation.latitude,
+          longitude: initialLocation.longitude,
+        }),
       });
 
       const data = await response.json();
-
       if (!response.ok) {
         throw new Error(data.error || data.message || 'Failed to start trip');
       }
 
       setTripStatus('ACTIVE');
+      setConnectionStatus('connecting');
       setLocationHistory([]);
+
+      if (data.location) {
+        applyLocationSample({
+          latitude: data.location.latitude,
+          longitude: data.location.longitude,
+          speed: data.location.speed,
+          heading: data.location.heading,
+          timestamp: Number(new Date(data.location.recorded_at)),
+        });
+      }
+
       onTripStarted?.();
       initializeSocket(accessToken);
-      startLocationTracking();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to start trip');
+      startLocationTracking(false);
+    } catch (startError) {
+      setError(startError instanceof Error ? startError.message : 'Failed to start trip');
     } finally {
       setIsStarting(false);
     }
@@ -130,10 +402,7 @@ const DriverTracking: React.FC<DriverTrackingProps> = ({
       setIsEnding(true);
       setError(null);
 
-      if (watchIdRef.current !== null) {
-        navigator.geolocation.clearWatch(watchIdRef.current);
-        watchIdRef.current = null;
-      }
+      stopLocationTracking();
 
       if (socketRef.current) {
         socketRef.current.disconnect();
@@ -145,7 +414,7 @@ const DriverTracking: React.FC<DriverTrackingProps> = ({
         throw new Error('Authentication required');
       }
 
-      const response = await fetch(apiUrl('/api/driver/end-trip'), {
+      const response = await fetch(apiUrl('/api/tracking/driver/trip/end'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -163,87 +432,18 @@ const DriverTracking: React.FC<DriverTrackingProps> = ({
       setConnectionStatus('disconnected');
       setCurrentLocation(null);
       setLocationHistory([]);
+      latestLocationRef.current = null;
       onTripEnded?.();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to end trip');
+    } catch (endError) {
+      setError(endError instanceof Error ? endError.message : 'Failed to end trip');
       const accessToken = getAuthToken();
       if (accessToken) {
         initializeSocket(accessToken);
-        startLocationTracking();
+        startLocationTracking(true);
       }
     } finally {
       setIsEnding(false);
     }
-  };
-
-  const initializeSocket = (accessToken: string) => {
-    const socket = io(SOCKET_ORIGIN, {
-      ...socketOptions,
-      auth: { token: accessToken },
-    });
-
-    setConnectionStatus('connecting');
-
-    socket.on('connect', () => {
-      setConnectionStatus('connected');
-      socket.emit('driver:joinSchedule', { scheduleId });
-    });
-
-    socket.on('disconnect', () => {
-      setConnectionStatus('disconnected');
-    });
-
-    socket.on('error', (data: { message: string }) => {
-      setError(data.message);
-      setConnectionStatus('error');
-    });
-
-    socketRef.current = socket;
-  };
-
-  const startLocationTracking = () => {
-    if (!navigator.geolocation) {
-      setError('Geolocation is not supported by your browser');
-      return;
-    }
-
-    const watchId = navigator.geolocation.watchPosition(
-      (position) => {
-        const locationData: LocationData = {
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-          speed: position.coords.speed,
-          heading: position.coords.heading,
-          timestamp: position.timestamp,
-        };
-
-        setCurrentLocation(locationData);
-        setLocationHistory((prev) => {
-          const next = [...prev, { lat: locationData.latitude, lng: locationData.longitude }];
-          return next.slice(-100);
-        });
-
-        if (socketRef.current?.connected) {
-          socketRef.current.emit('driver:locationUpdate', {
-            scheduleId,
-            latitude: locationData.latitude,
-            longitude: locationData.longitude,
-            speed: locationData.speed ? locationData.speed * 3.6 : null,
-            heading: locationData.heading,
-          });
-        }
-      },
-      (geoError) => {
-        setError(`Location error: ${geoError.message}`);
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 0,
-      }
-    );
-
-    watchIdRef.current = watchId;
   };
 
   const getConnectionStatusColor = () => {
@@ -302,7 +502,7 @@ const DriverTracking: React.FC<DriverTrackingProps> = ({
         <div className="mb-4 rounded-lg overflow-hidden border border-blue-100">
           {!hasGoogleMapsKey ? (
             <div className="p-4 bg-amber-50 text-amber-800 text-sm">
-              Missing Google Maps key. Add <code>VITE_GOOGLE_MAPS_API_KEY</code> in frontend <code>.env</code>.
+              Missing Google Maps key. Add VITE_GOOGLE_MAPS_API_KEY in frontend .env.
             </div>
           ) : !isLoaded ? (
             <div className="p-6 flex items-center justify-center">

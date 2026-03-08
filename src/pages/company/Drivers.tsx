@@ -54,7 +54,7 @@ export default function Drivers() {
   const [availableBuses, setAvailableBuses] = useState<CompanyBus[]>([]);
   const [selectedBusIds, setSelectedBusIds] = useState<string[]>([]);
   const [initialBusIds, setInitialBusIds] = useState<string[]>([]);
-  const API_URL = import.meta.env.VITE_API_URL || 'https://backend-7cxc.onrender.com/api';
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
   useEffect(() => {
     fetchDrivers();

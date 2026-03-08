@@ -1,1489 +1,1216 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Home,
-  Ticket,
-  MapPin,
-  User,
-  Bell,
-  Search,
-  Calendar,
-  Clock,
-  Bus,
-  ArrowRight,
-  QrCode,
-  CreditCard,
-  History,
-  Star,
-  Settings,
-  LogOut,
-  X,
-  Check,
   AlertCircle,
-  ChevronRight,
-  Navigation,
-  Download,
-  Share2,
+  ArrowRight,
+  Bell,
+  BookOpen,
+  Bus,
+  Calendar,
+  CheckCircle,
+  Clock,
+  CreditCard,
+  Eye,
+  HelpCircle,
+  History,
+  LogOut,
+  MapPin,
   Menu,
-  Plus,
-  Ban,
-  Loader2,
+  Navigation,
+  RefreshCw,
+  Search,
+  Share2,
+  Ticket,
+  User,
+  X,
 } from 'lucide-react';
-import mapboxgl from 'mapbox-gl';
-import 'mapbox-gl/dist/mapbox-gl.css';
-import { QRCodeCanvas } from 'qrcode.react';
+import { QRCodeSVG } from 'qrcode.react';
 import { useAuth } from '../../components/AuthContext';
-import SeatMap from '../../components/SeatMap';
-import SearchResults from '../../components/SearchResults';
-import PopularRoutes, { PopularRoute } from '../../components/PopularRoutes';
-import PersonalInformation from '../../components/account/PersonalInformation';
-import PaymentMethods from '../../components/account/PaymentMethods';
-import NotificationsSettings from '../../components/account/NotificationsSettings';
-import PrivacySecurity from '../../components/account/PrivacySecurity';
+import NotificationBell from '../../components/NotificationBell';
 import PassengerTracking from '../../components/PassengerTracking';
+import AccountSettings from '../account/AccountSettings';
+
+type DashboardTab = 'shared' | 'bookings' | 'map' | 'history' | 'help' | 'profile';
+
+interface SearchTrip {
+  schedule_id: string;
+  bus_id?: string;
+  route_id?: string;
+  bus_plate?: string;
+  company_name?: string;
+  departure_date?: string | null;
+  departure_time?: string | null;
+  pickup_stop: string;
+  dropoff_stop: string;
+  from_location?: string | null;
+  to_location?: string | null;
+  available_seats?: number;
+  capacity?: number;
+  price?: number;
+}
+
+interface TicketRecord {
+  id: string;
+  scheduleId: string;
+  bookingRef: string;
+  status: string;
+  fromStop: string;
+  toStop: string;
+  scheduleDate: string | null;
+  departureTime: string | null;
+  seatNumber: string;
+  busPlate: string;
+  price: number | null;
+  createdAt: string | null;
+}
+
+interface NotificationItem {
+  id: string;
+  title: string;
+  message: string;
+  type: string;
+  isRead: boolean;
+  createdAt: string | null;
+  link: string | null;
+}
+
+const FALLBACK_STOPS = [
+  'Kigali',
+  'Nyabugogo',
+  'Huye',
+  'Musanze',
+  'Rubavu',
+  'Rusizi',
+  'Muhanga',
+  'Rwamagana',
+  'Kamonyi',
+  'Nyanza',
+];
+
+const statusTone: Record<string, string> = {
+  CONFIRMED: 'border border-emerald-200 bg-emerald-50 text-emerald-700',
+  IN_PROGRESS: 'border border-sky-200 bg-sky-50 text-sky-700',
+  COMPLETED: 'border border-slate-200 bg-slate-100 text-slate-700',
+  CANCELLED: 'border border-rose-200 bg-rose-50 text-rose-700',
+  SCHEDULED: 'border border-amber-200 bg-amber-50 text-amber-700',
+};
+
+const cardClassName = 'rounded-[30px] border border-slate-200/80 bg-white/95 backdrop-blur-xl shadow-[0_24px_80px_rgba(15,23,42,0.08)]';
+const mutedCardClassName = 'rounded-[24px] border border-slate-200/80 bg-slate-50/85';
+const fieldClassName = 'w-full rounded-[20px] border border-slate-200 bg-white px-4 py-3.5 text-sm font-medium text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#0077B6] focus:ring-4 focus:ring-[#0077B6]/10';
+const primaryButtonClassName = 'inline-flex items-center justify-center gap-2 rounded-full bg-[#0077B6] px-5 py-3.5 text-sm font-bold text-white shadow-[0_18px_36px_rgba(0,119,182,0.28)] transition hover:bg-[#005F8E] disabled:cursor-not-allowed disabled:opacity-60';
+const secondaryButtonClassName = 'inline-flex items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-5 py-3.5 text-sm font-bold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50';
+
+const authHeaders = (accessToken?: string, includeJson = false): HeadersInit => {
+  const headers: Record<string, string> = {};
+  if (includeJson) {
+    headers['Content-Type'] = 'application/json';
+  }
+  if (accessToken) {
+    headers.Authorization = `Bearer ${accessToken}`;
+  }
+  return headers;
+};
+
+const formatDate = (value?: string | null) => {
+  if (!value) return 'TBD';
+  const parsed = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+};
+
+const formatShortDate = (value?: string | null) => {
+  if (!value) return 'TBD';
+  const parsed = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+};
+
+const formatTime = (value?: string | null) => {
+  if (!value) return 'TBD';
+  return String(value).slice(0, 5);
+};
+
+const formatCurrency = (value?: number | null) => {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return 'RWF 0';
+  return `RWF ${Number(value).toLocaleString()}`;
+};
+
+const parseMaybeJson = async (response: Response) => {
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
+};
+
+const normalizeTicket = (source: any): TicketRecord => ({
+  id: String(source?.id || source?.ticket_id || source?.booking_ref || ''),
+  scheduleId: String(source?.scheduleId || source?.schedule_id || ''),
+  bookingRef: String(source?.bookingRef || source?.booking_ref || source?.id || ''),
+  status: String(source?.status || 'CONFIRMED').toUpperCase(),
+  fromStop: String(source?.fromStop || source?.from_stop || source?.from || source?.from_location || 'N/A'),
+  toStop: String(source?.toStop || source?.to_stop || source?.to || source?.to_location || 'N/A'),
+  scheduleDate: source?.scheduleDate || source?.schedule_date || source?.date || null,
+  departureTime: source?.departureTime || source?.departure_time || source?.time || null,
+  seatNumber: String(source?.seatNumber || source?.seat_number || source?.seat || 'N/A'),
+  busPlate: String(source?.busPlate || source?.bus_plate || source?.plate_number || 'N/A'),
+  price: source?.price !== undefined && source?.price !== null ? Number(source.price) : null,
+  createdAt: source?.createdAt || source?.created_at || source?.booked_at || null,
+});
+
+const normalizeNotification = (source: any): NotificationItem => ({
+  id: String(source?.id || ''),
+  title: String(source?.title || 'Notification'),
+  message: String(source?.message || ''),
+  type: String(source?.type || 'system'),
+  isRead: Boolean(source?.is_read),
+  createdAt: source?.created_at || null,
+  link: source?.link || null,
+});
+
+const dedupeTickets = (tickets: TicketRecord[]) => {
+  const seen = new Set<string>();
+  return tickets.filter((ticket) => {
+    const key = ticket.id || `${ticket.scheduleId}:${ticket.seatNumber}:${ticket.bookingRef}`;
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
+const startOfToday = () => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today;
+};
+
+const isTrackableTicket = (ticket: TicketRecord) => {
+  if (!ticket.scheduleId) return false;
+  const status = ticket.status.toUpperCase();
+  if (status === 'CANCELLED' || status === 'COMPLETED') return false;
+
+  if (!ticket.scheduleDate) return true;
+  const travelDate = new Date(`${ticket.scheduleDate}T00:00:00`);
+  if (Number.isNaN(travelDate.getTime())) return true;
+  return travelDate.getTime() >= startOfToday().getTime();
+};
+
+const isHistoryTicket = (ticket: TicketRecord) => {
+  if (ticket.status === 'COMPLETED' || ticket.status === 'CANCELLED') return true;
+  if (!ticket.scheduleDate) return false;
+  const travelDate = new Date(`${ticket.scheduleDate}T00:00:00`);
+  if (Number.isNaN(travelDate.getTime())) return false;
+  return travelDate.getTime() < startOfToday().getTime();
+};
+
+const metricCard = (label: string, value: string, accent: string) => (
+  <div className="rounded-[24px] border border-slate-200/80 bg-white/90 p-5 shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
+    <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">
+      <span className="h-2 w-2 rounded-full bg-[#0077B6]" />
+      {label}
+    </div>
+    <div className={`mt-4 text-3xl font-black leading-none ${accent}`}>{value}</div>
+  </div>
+);
 
 export default function CommuterDashboard() {
-  const { user, signOut, accessToken, signIn } = useAuth();
-  const [expandedSetting, setExpandedSetting] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState('home');
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [showTicketModal, setShowTicketModal] = useState(false);
-  const [selectedTicket, setSelectedTicket] = useState(null);
-  const [cancelling, setCancelling] = useState(false);
-  const [seats, setSeats] = useState<any[]>([]);
-  const [seatsLoading, setSeatsLoading] = useState(false);
-  const [selectedSeatsMap, setSelectedSeatsMap] = useState<Record<string, boolean>>({});
-  const [locking, setLocking] = useState(false);
-  const [lockError, setLockError] = useState<string | null>(null);
-  const [trackedTicket, setTrackedTicket] = useState<any | null>(null);
+  const { user, signOut, accessToken } = useAuth();
 
-  useEffect(() => {
-    let mounted = true;
-    const loadSeats = async () => {
-      if (!showTicketModal || !selectedTicket) return;
-      // don't try to load if this is an existing confirmed ticket
-      if (selectedTicket.seat || selectedTicket.qrCode) return;
-      setSeatsLoading(true);
-      setSeats([]);
-      setSelectedSeatsMap({});
-      try {
-        const hdrs: Record<string,string> = { 'Content-Type': 'application/json' };
-        if (accessToken) hdrs['Authorization'] = `Bearer ${accessToken}`;
-        const res = await fetch(`/api/seats/schedules/${selectedTicket.id}`, { headers: hdrs });
-        if (!mounted) return;
-        if (res.ok) {
-          const json = await res.json();
-          setSeats(Array.isArray(json.seats) ? json.seats : []);
-        } else {
-          setSeats([]);
-        }
-      } catch (err) {
-        console.error('Failed to load seats', err);
-        setSeats([]);
-      } finally {
-        if (mounted) setSeatsLoading(false);
-      }
-    };
-
-    loadSeats();
-    return () => { mounted = false; };
-  }, [showTicketModal, selectedTicket, accessToken]);
-  // Data from backend (replaces previous mock data)
-  const [upcomingTrips, setUpcomingTrips] = useState<any[]>([]);
-  const [recentBookings, setRecentBookings] = useState<any[]>([]);
-  const [notifications, setNotifications] = useState<any[]>([]);
-  const [popularRoutes, setPopularRoutes] = useState<any[]>([]);
-
-  const [stats, setStats] = useState({ totalTrips: 0, activeTickets: 0, favoriteRoutes: 0, rewardsPoints: 0 });
-  const [loading, setLoading] = useState({ upcoming: true, popular: true, stats: true, recent: true, notifs: true });
-
-  // Profile edit state
-  const [editingProfile, setEditingProfile] = useState(false);
-  const [profileForm, setProfileForm] = useState({ name: user?.name || '', email: user?.email || '', phone: user?.phone || '' });
-  const [profileSaving, setProfileSaving] = useState(false);
-  const [profileError, setProfileError] = useState<string | null>(null);
-
-  // Live Map state
-  const [driverLocations, setDriverLocations] = useState<any[]>([]);
-  const [mapLoading, setMapLoading] = useState(false);
-  const mapContainer = useRef<HTMLDivElement>(null);
-  const map = useRef<mapboxgl.Map | null>(null);
-  const markers = useRef<{ [key: string]: mapboxgl.Marker }>({});
-const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
-const hasMapboxToken = typeof MAPBOX_TOKEN === 'string' && MAPBOX_TOKEN.trim().length > 0;
-  useEffect(() => {
-    setProfileForm({ name: user?.name || '', email: user?.email || '', phone: user?.phone || '' });
-  }, [user]);
-
-  // Search state
-  const [fromInput, setFromInput] = useState('');
-  const [toInput, setToInput] = useState('');
-  const [dateInput, setDateInput] = useState('');
-  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<DashboardTab>('shared');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [fromLocation, setFromLocation] = useState('');
+  const [toLocation, setToLocation] = useState('');
+  const [travelDate, setTravelDate] = useState('');
+  const [passengers, setPassengers] = useState(1);
+  const [availableStops, setAvailableStops] = useState<string[]>([]);
+  const [popularRoutes, setPopularRoutes] = useState<SearchTrip[]>([]);
+  const [searchResults, setSearchResults] = useState<SearchTrip[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
-  const [searchError, setSearchError] = useState<string | null>(null);
   const [searchPerformed, setSearchPerformed] = useState(false);
+  const [bookingLoadingId, setBookingLoadingId] = useState<string | null>(null);
+  const [bookingError, setBookingError] = useState('');
+  const [bookingSuccess, setBookingSuccess] = useState('');
+  const [tickets, setTickets] = useState<TicketRecord[]>([]);
+  const [ticketsLoading, setTicketsLoading] = useState(false);
+  const [ticketsError, setTicketsError] = useState('');
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [notificationsError, setNotificationsError] = useState('');
+  const [selectedTrackingTicketId, setSelectedTrackingTicketId] = useState<string | null>(null);
+  const [viewTicket, setViewTicket] = useState<TicketRecord | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
-  // Fetch user tickets - extracted to be reusable
-  const fetchTickets = async () => {
-    const hdrs: Record<string,string> = { 'Content-Type': 'application/json' };
-    if (accessToken) hdrs['Authorization'] = `Bearer ${accessToken}`;
-    
+  const stopOptions = availableStops.length > 0 ? availableStops : FALLBACK_STOPS;
+
+  const trackableTickets = useMemo(() => {
+    return tickets.filter(isTrackableTicket).sort((left, right) => {
+      const leftStamp = `${left.scheduleDate || ''} ${left.departureTime || ''}`;
+      const rightStamp = `${right.scheduleDate || ''} ${right.departureTime || ''}`;
+      return leftStamp.localeCompare(rightStamp);
+    });
+  }, [tickets]);
+
+  const historyTickets = useMemo(() => {
+    return tickets.filter(isHistoryTicket).sort((left, right) => {
+      return `${right.scheduleDate || ''} ${right.departureTime || ''}`.localeCompare(
+        `${left.scheduleDate || ''} ${left.departureTime || ''}`
+      );
+    });
+  }, [tickets]);
+
+  const selectedTrackingTicket = useMemo(() => {
+    return trackableTickets.find((ticket) => ticket.id === selectedTrackingTicketId) || trackableTickets[0] || null;
+  }, [selectedTrackingTicketId, trackableTickets]);
+
+  const unreadNotifications = useMemo(() => notifications.filter((notification) => !notification.isRead), [notifications]);
+  const totalSpent = useMemo(() => {
+    return tickets.reduce((sum, ticket) => sum + (ticket.price || 0), 0);
+  }, [tickets]);
+
+  useEffect(() => {
+    if (!selectedTrackingTicketId && trackableTickets.length > 0) {
+      setSelectedTrackingTicketId(trackableTickets[0].id);
+      return;
+    }
+
+    if (selectedTrackingTicketId && !trackableTickets.some((ticket) => ticket.id === selectedTrackingTicketId)) {
+      setSelectedTrackingTicketId(trackableTickets[0]?.id || null);
+    }
+  }, [selectedTrackingTicketId, trackableTickets]);
+
+  const loadStops = async () => {
     try {
-      const res = await fetch('/api/tickets', { headers: hdrs });
-      if (res.ok) {
-        const json = await res.json();
-        const tickets = Array.isArray(json.tickets) ? json.tickets : (json.tickets || []);
-        // upcoming: only CONFIRMED
-        const confirmed = tickets.filter((t:any) => t.status === 'CONFIRMED');
-        setUpcomingTrips(confirmed);
-        // recent bookings: latest tickets (all statuses) sorted by createdAt
-        const recent = tickets.slice().sort((a:any,b:any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-        setRecentBookings(recent);
-      } else {
-        setUpcomingTrips([]);
-        setRecentBookings([]);
+      const response = await fetch('/api/stops');
+      const payload = await parseMaybeJson(response);
+      if (response.ok && payload?.success && Array.isArray(payload.stops) && payload.stops.length > 0) {
+        setAvailableStops(payload.stops.map((stop: unknown) => String(stop)));
       }
-    } catch (e) {
-      setUpcomingTrips([]);
-      setRecentBookings([]);
+    } catch {
+      // Keep fallback stops.
     }
   };
 
-  useEffect(() => {
-    let mounted = true;
-    const hdrs: Record<string,string> = { 'Content-Type': 'application/json' };
-    if (accessToken) hdrs['Authorization'] = `Bearer ${accessToken}`;
+  const loadPopularRoutes = async () => {
+    try {
+      const response = await fetch('/api/schedules', { headers: authHeaders(accessToken) });
+      const payload = await parseMaybeJson(response);
+      const routes = Array.isArray(payload?.schedules) ? payload.schedules : [];
+      const normalized = routes.map((route: any) => ({
+        schedule_id: String(route.id || route.schedule_id || route.scheduleId || ''),
+        bus_id: route.bus_id || route.busId,
+        route_id: route.route_id || route.routeId,
+        bus_plate: route.bus_plate || route.busPlateNumber || route.plate_number || '',
+        company_name: route.company_name || route.companyName || '',
+        departure_date: route.date || route.schedule_date || route.tripDate || null,
+        departure_time: route.departure_time || route.departureTime || route.time || null,
+        pickup_stop: route.routeFrom || route.from_location || route.from || route.departureLocation || 'Unknown',
+        dropoff_stop: route.routeTo || route.to_location || route.to || route.destination || 'Unknown',
+        from_location: route.routeFrom || route.from_location || route.from || null,
+        to_location: route.routeTo || route.to_location || route.to || null,
+        available_seats: Number(route.available_seats ?? route.seatsAvailable ?? route.availableSeats ?? 0),
+        capacity: Number(route.capacity ?? route.totalSeats ?? route.seatCapacity ?? 0),
+        price: Number(route.price ?? 0),
+      }));
+      setPopularRoutes(normalized.slice(0, 6));
+    } catch {
+      setPopularRoutes([]);
+    }
+  };
 
-    // Fetch user tickets directly from /api/tickets
-    const fetchTicketsInEffect = async () => {
-      try {
-        const res = await fetch('/api/tickets', { headers: hdrs });
-        if (!mounted) return;
-        if (res.ok) {
-          const json = await res.json();
-          const tickets = Array.isArray(json.tickets) ? json.tickets : (json.tickets || []);
-          // upcoming: only CONFIRMED
-          const confirmed = tickets.filter((t:any) => t.status === 'CONFIRMED');
-          setUpcomingTrips(confirmed);
-          // recent bookings: latest tickets (all statuses) sorted by createdAt
-          const recent = tickets.slice().sort((a:any,b:any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-          setRecentBookings(recent);
-        } else {
-          setUpcomingTrips([]);
-          setRecentBookings([]);
-        }
-      } catch (e) {
-        setUpcomingTrips([]);
-        setRecentBookings([]);
-      } finally {
-        if (mounted) setLoading((s) => ({ ...s, upcoming: false, recent: false }));
+  const loadTickets = async () => {
+    if (!accessToken) {
+      setTickets([]);
+      return;
+    }
+
+    setTicketsLoading(true);
+    setTicketsError('');
+    try {
+      const [myTicketsResponse, ticketsResponse] = await Promise.all([
+        fetch('/api/my-tickets', { headers: authHeaders(accessToken) }),
+        fetch('/api/tickets', { headers: authHeaders(accessToken) }),
+      ]);
+
+      const [myTicketsPayload, ticketsPayload] = await Promise.all([
+        parseMaybeJson(myTicketsResponse),
+        parseMaybeJson(ticketsResponse),
+      ]);
+
+      const myTicketsList = Array.isArray(myTicketsPayload?.tickets) ? myTicketsPayload.tickets : [];
+      const ticketsList = Array.isArray(ticketsPayload?.tickets) ? ticketsPayload.tickets : [];
+      const normalized = dedupeTickets([...myTicketsList, ...ticketsList].map(normalizeTicket).filter((ticket) => Boolean(ticket.id)));
+      setTickets(normalized);
+
+      if (!myTicketsResponse.ok && !ticketsResponse.ok) {
+        setTicketsError((myTicketsPayload?.message || ticketsPayload?.message || 'Failed to load your tickets.'));
       }
-    };
+    } catch {
+      setTicketsError('Network error while loading your commuter data.');
+    } finally {
+      setTicketsLoading(false);
+    }
+  };
 
-    // Fetch available schedules (used for Book New Ticket / popular routes)
-    const fetchSchedules = async () => {
-      try {
-        const res = await fetch('/api/schedules', { headers: hdrs });
-        if (!mounted) return;
-        if (res.ok) {
-          const json = await res.json();
-          const schedules = Array.isArray(json.schedules) ? json.schedules : (json.schedules || []);
-          setPopularRoutes(schedules);
-        } else {
-          setPopularRoutes([]);
-        }
-      } catch (e) {
-        setPopularRoutes([]);
-      } finally {
-        if (mounted) setLoading((s) => ({ ...s, popular: false }));
-      }
-    };
+  const loadNotifications = async () => {
+    if (!accessToken) {
+      setNotifications([]);
+      return;
+    }
 
-    // lightweight stats derived from tickets/schedules
-    const fetchStats = async () => {
-      try {
-        // use /api/tickets for counts
-        const res = await fetch('/api/tickets', { headers: hdrs });
-        if (!mounted) return;
-        if (res.ok) {
-          const json = await res.json();
-          const tickets = Array.isArray(json.tickets) ? json.tickets : (json.tickets || []);
-          const confirmed = tickets.filter((t:any) => t.status === 'CONFIRMED');
-          setStats((s) => ({ ...s, totalTrips: tickets.length, activeTickets: confirmed.length }));
-        }
-      } catch (e) {
-        // keep defaults
-      } finally {
-        if (mounted) setLoading((s) => ({ ...s, stats: false }));
-      }
-    };
-
-    const fetchNotifs = async () => {
-      try {
-        const res = await fetch('/api/notifications', { headers: hdrs });
-        if (!mounted) return;
-        if (res.ok) {
-          const json = await res.json();
-          setNotifications(Array.isArray(json) ? json : json.notifications || []);
-        } else {
-          setNotifications([]);
-        }
-      } catch (e) {
+    setNotificationsLoading(true);
+    setNotificationsError('');
+    try {
+      const response = await fetch('/api/notifications?limit=6', { headers: authHeaders(accessToken) });
+      const payload = await parseMaybeJson(response);
+      if (response.ok) {
+        setNotifications(Array.isArray(payload?.data) ? payload.data.map(normalizeNotification) : []);
+      } else {
         setNotifications([]);
-      } finally {
-        if (mounted) setLoading((s) => ({ ...s, notifs: false }));
+        setNotificationsError(payload?.message || 'Failed to load notifications.');
       }
-    };
+    } catch {
+      setNotifications([]);
+      setNotificationsError('Unable to load notifications right now.');
+    } finally {
+      setNotificationsLoading(false);
+    }
+  };
 
-    fetchTicketsInEffect();
-    fetchSchedules();
-    fetchStats();
-    fetchNotifs();
+  const refreshDashboard = async () => {
+    setRefreshing(true);
+    await Promise.all([loadStops(), loadPopularRoutes(), loadTickets(), loadNotifications()]);
+    setRefreshing(false);
+  };
 
-    return () => { mounted = false; };
+  useEffect(() => {
+    void refreshDashboard();
   }, [accessToken]);
 
-  // Initialize map for live tracking
-  useEffect(() => {
-    if (activeTab !== 'map' || !hasMapboxToken || !mapContainer.current || map.current) return;
+  const handleSearch = async (event?: React.FormEvent) => {
+    event?.preventDefault();
 
-    mapboxgl.accessToken = MAPBOX_TOKEN;
-    map.current = new mapboxgl.Map({
-      container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/streets-v12',
-      center: [30.0619, -1.9403], // Rwanda center coordinates
-      zoom: 10,
-    });
-
-    map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
-
-    return () => {
-      if (map.current) {
-        map.current.remove();
-        map.current = null;
-      }
-    };
-  }, [activeTab]);
-
-  // Fetch driver locations when map tab is active
-  useEffect(() => {
-    if (activeTab !== 'map' || !hasMapboxToken) return;
-
-    const fetchDriverLocations = async () => {
-      setMapLoading(true);
-      try {
-        const hdrs: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (accessToken) hdrs['Authorization'] = `Bearer ${accessToken}`;
-
-        const API_URL = import.meta.env.VITE_API_URL || 'https://backend-7cxc.onrender.com/api';
-        const response = await fetch(`${API_URL}/tracking/company/live-locations`, {
-          headers: hdrs,
-        });
-
-        if (!response.ok) {
-          if (response.status === 404 || response.status === 403) {
-            setDriverLocations([]);
-            setMapLoading(false);
-            return;
-          }
-          throw new Error('Failed to fetch driver locations');
-        }
-
-        const data = await response.json();
-        
-        if (data.success && data.locations && data.locations.length > 0) {
-          const locations = data.locations.map((loc: any) => ({
-            id: loc.bus.id,
-            plateNumber: loc.bus.plateNumber,
-            model: loc.bus.model,
-            driverName: loc.driver.name,
-            status: loc.trip_status === 'in_progress' ? 'active' : 'idle',
-            latitude: loc.location.latitude,
-            longitude: loc.location.longitude,
-            speed: loc.location.speed,
-            lastUpdate: loc.updated_at,
-            capacity: loc.bus.capacity,
-          }));
-
-          setDriverLocations(locations);
-          updateMapMarkers(locations);
-        } else {
-          setDriverLocations([]);
-        }
-      } catch (error) {
-        console.error('Error fetching driver locations:', error);
-        setDriverLocations([]);
-      } finally {
-        setMapLoading(false);
-      }
-    };
-
-    fetchDriverLocations();
-    const interval = setInterval(fetchDriverLocations, 10000); // Update every 10 seconds
-
-    return () => clearInterval(interval);
-  }, [activeTab, accessToken]);
-
-  // Update map markers
-  const updateMapMarkers = (locations: any[]) => {
-    if (!map.current) return;
-
-    // Remove old markers
-    Object.values(markers.current).forEach(marker => marker.remove());
-    markers.current = {};
-
-    // Add new markers
-    locations.forEach(loc => {
-      if (loc.latitude !== 0 && loc.longitude !== 0) {
-        const el = document.createElement('div');
-        el.className = 'custom-marker';
-        el.style.width = '32px';
-        el.style.height = '32px';
-        el.style.borderRadius = '50%';
-        el.style.background = loc.status === 'active' ? '#0077B6' : '#94A3B8';
-        el.style.border = '3px solid white';
-        el.style.boxShadow = '0 2px 8px rgba(0,0,0,0.3)';
-        el.style.cursor = 'pointer';
-        el.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:white;font-size:14px;font-weight:bold;">🚌</div>`;
-
-        const popup = new mapboxgl.Popup({ offset: 25 }).setHTML(`
-          <div style="padding: 8px; min-width: 200px;">
-            <div style="font-weight: 600; font-size: 14px; margin-bottom: 6px;">${loc.plateNumber}</div>
-            <div style="font-size: 12px; color: #6B7280; margin-bottom: 4px;">
-              <strong>Driver:</strong> ${loc.driverName}
-            </div>
-            <div style="font-size: 12px; color: #6B7280; margin-bottom: 4px;">
-              <strong>Model:</strong> ${loc.model}
-            </div>
-            <div style="font-size: 12px; color: #6B7280; margin-bottom: 4px;">
-              <strong>Speed:</strong> ${loc.speed.toFixed(1)} km/h
-            </div>
-            <div style="font-size: 12px; color: #6B7280;">
-              <strong>Status:</strong> <span style="color: ${loc.status === 'active' ? '#27AE60' : '#94A3B8'};">${loc.status}</span>
-            </div>
-          </div>
-        `);
-
-        const marker = new mapboxgl.Marker(el)
-          .setLngLat([loc.longitude, loc.latitude])
-          .setPopup(popup)
-          .addTo(map.current!);
-
-        markers.current[loc.id] = marker;
-      }
-    });
-
-    // Fit map to show all markers
-    if (locations.length > 0) {
-      const validLocations = locations.filter(l => l.latitude !== 0 && l.longitude !== 0);
-      if (validLocations.length > 0) {
-        const bounds = new mapboxgl.LngLatBounds();
-        validLocations.forEach(loc => {
-          bounds.extend([loc.longitude, loc.latitude]);
-        });
-        map.current?.fitBounds(bounds, { padding: 50, maxZoom: 14 });
-      }
+    if (!fromLocation || !toLocation) {
+      setBookingError('Select both departure and destination to search trips.');
+      return;
     }
-  };
 
-  const handleSearch = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    setSearchError(null);
-    const from = fromInput.trim();
-    const to = toInput.trim();
-    const date = dateInput.trim();
-    if (!from || !to) return setSearchError('Enter both departure and arrival cities');
+    if (fromLocation === toLocation) {
+      setBookingError('Departure and destination must be different.');
+      return;
+    }
 
+    setBookingError('');
+    setBookingSuccess('');
     setSearchPerformed(true);
-
     setSearchLoading(true);
+
     try {
-      const hdrs: Record<string,string> = { 'Content-Type': 'application/json' };
-      if (accessToken) hdrs['Authorization'] = `Bearer ${accessToken}`;
-      
-      // Build query string with optional date
-      let qs = `?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
-      if (date) {
-        qs += `&date=${encodeURIComponent(date)}`;
+      let query = `?from=${encodeURIComponent(fromLocation)}&to=${encodeURIComponent(toLocation)}`;
+      if (travelDate) {
+        query += `&date=${encodeURIComponent(travelDate)}`;
       }
-      
-      const res = await fetch(`/api/schedules/search${qs}`, { headers: hdrs });
-      const contentType = (res.headers.get('content-type') || '').toLowerCase();
-      if (!res.ok) {
-        // Try fallback PG endpoint
-        console.warn('Primary schedules search failed, trying fallback /api/schedules/search-pg', res.status);
-        const alt = await fetch(`/api/schedules/search-pg${qs}`, { headers: hdrs });
-        const altCt = (alt.headers.get('content-type') || '').toLowerCase();
-        if (alt.ok && altCt.includes('application/json')) {
-          const jsonAlt = await alt.json();
-          const list = Array.isArray(jsonAlt) ? jsonAlt : (jsonAlt.schedules || jsonAlt.schedules || jsonAlt);
-          setSearchResults(list || []);
-          console.log('🔍 Search results:', list);
-        } else if (alt.ok) {
-          const text = await alt.text();
-          console.error('Fallback /search-pg returned non-JSON:', text);
-          setSearchResults([]);
-          setSearchError('Failed to search schedules');
-        } else {
-          setSearchResults([]);
-          setSearchError('Failed to search schedules');
-        }
-      } else if (!contentType.includes('application/json')) {
-        const txt = await res.text();
-        console.error('Primary /search returned non-JSON response:', txt);
-        // Try fallback
-        const alt = await fetch(`/api/schedules/search-pg${qs}`, { headers: hdrs });
-        const altCt = (alt.headers.get('content-type') || '').toLowerCase();
-        if (alt.ok && altCt.includes('application/json')) {
-          const jsonAlt = await alt.json();
-          const results = Array.isArray(jsonAlt) ? jsonAlt : jsonAlt.schedules || [];
-          setSearchResults(results);
-          console.log('🔍 Search results:', results);
-        } else {
-          setSearchResults([]);
-          setSearchError('Failed to search schedules');
-        }
+
+      const response = await fetch(`/api/search-trips${query}`, { headers: authHeaders(accessToken) });
+      const payload = await parseMaybeJson(response);
+      if (response.ok && payload?.success) {
+        setSearchResults(Array.isArray(payload.trips) ? payload.trips : []);
       } else {
-        const json = await res.json();
-        const results = Array.isArray(json) ? json : json.schedules || [];
-        setSearchResults(results);
-        console.log('🔍 Search results:', results);
+        setSearchResults([]);
+        setBookingError(payload?.message || 'Failed to search trips.');
       }
-    } catch (err) {
-      console.error('Search schedules error:', err);
+    } catch {
       setSearchResults([]);
-      setSearchError('Failed to search schedules');
+      setBookingError('Search failed. Please try again.');
     } finally {
       setSearchLoading(false);
     }
   };
 
-  const formatCurrency = (n?: number) => `RWF ${Number(n || 0).toLocaleString()}`;
+  const handleBookSeat = async (trip: SearchTrip) => {
+    if (!accessToken) {
+      setBookingError('Your session expired. Please sign in again.');
+      return;
+    }
 
-  const calcDuration = (dep?: string | Date, arr?: string | Date) => {
-    if (!dep || !arr) return null;
-    const d = new Date(dep);
-    const a = new Date(arr);
-    if (isNaN(d.getTime()) || isNaN(a.getTime())) return null;
-    const diff = Math.max(0, a.getTime() - d.getTime());
-    const mins = Math.round(diff / 60000);
-    const hrs = Math.floor(mins / 60);
-    const rem = mins % 60;
-    return hrs > 0 ? `${hrs}h ${rem}m` : `${rem}m`;
+    setBookingError('');
+    setBookingSuccess('');
+    setBookingLoadingId(trip.schedule_id);
+
+    try {
+      const bookedTickets: TicketRecord[] = [];
+      for (let index = 0; index < passengers; index += 1) {
+        const response = await fetch('/api/book-ticket', {
+          method: 'POST',
+          headers: authHeaders(accessToken, true),
+          body: JSON.stringify({
+            schedule_id: trip.schedule_id,
+            from_stop: trip.pickup_stop,
+            to_stop: trip.dropoff_stop,
+            passenger_name: user?.name || undefined,
+          }),
+        });
+
+        const payload = await parseMaybeJson(response);
+        if (!response.ok || !payload?.success) {
+          throw new Error(payload?.message || 'Booking failed.');
+        }
+
+        bookedTickets.push(normalizeTicket({
+          ...payload.ticket,
+          from_stop: trip.pickup_stop,
+          to_stop: trip.dropoff_stop,
+          schedule_id: trip.schedule_id,
+          schedule_date: trip.departure_date,
+          departure_time: trip.departure_time,
+          bus_plate: trip.bus_plate,
+          price: trip.price,
+        }));
+      }
+
+      setBookingSuccess(`Booked ${bookedTickets.length} ticket${bookedTickets.length > 1 ? 's' : ''} successfully.`);
+      await loadTickets();
+      setViewTicket(bookedTickets[bookedTickets.length - 1] || null);
+      setActiveTab('bookings');
+    } catch (error) {
+      setBookingError(error instanceof Error ? error.message : 'Booking failed.');
+    } finally {
+      setBookingLoadingId(null);
+    }
   };
 
-  const resolveScheduleId = (ticket: any): string | null => {
-    if (!ticket) return null;
+  const openTracking = (ticket: TicketRecord) => {
+    setSelectedTrackingTicketId(ticket.id);
+    setActiveTab('map');
+  };
+
+  const shareTicket = async (ticket: TicketRecord) => {
+    const text = [
+      'SafariTix ticket',
+      `${ticket.fromStop} -> ${ticket.toStop}`,
+      `Date: ${formatDate(ticket.scheduleDate)}`,
+      `Time: ${formatTime(ticket.departureTime)}`,
+      `Seat: ${ticket.seatNumber}`,
+      `Reference: ${ticket.bookingRef}`,
+    ].join('\n');
+
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'SafariTix ticket', text });
+        return;
+      } catch {
+        // Fall back to clipboard below.
+      }
+    }
+
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      setBookingSuccess('Ticket details copied to clipboard.');
+      return;
+    }
+
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+  };
+
+  const navItems: Array<{ id: DashboardTab; label: string; icon: React.ComponentType<{ className?: string }> }> = [
+    { id: 'shared', label: 'Book Trip', icon: Search },
+    { id: 'bookings', label: 'My Bookings', icon: Ticket },
+    { id: 'map', label: 'Track Bus', icon: Navigation },
+    { id: 'history', label: 'Trip History', icon: History },
+    { id: 'help', label: 'Help Center', icon: HelpCircle },
+    { id: 'profile', label: 'Profile', icon: User },
+  ];
+
+  const renderSearchResults = () => {
+    if (searchLoading) {
+      return (
+        <EmptyPanel
+          icon={RefreshCw}
+          title="Searching available trips"
+          description="We are checking current shared routes, fares, and seat availability for your journey."
+          spinning={true}
+        />
+      );
+    }
+
+    if (!searchPerformed) {
+      return null;
+    }
+
+    if (searchResults.length === 0) {
+      return (
+        <EmptyPanel
+          icon={Bus}
+          title="No matching trips found"
+          description="Try another date or a different pickup and destination combination."
+        />
+      );
+    }
+
     return (
-      ticket.scheduleId ||
-      ticket.schedule_id ||
-      ticket.schedule?.id ||
-      ticket.trip?.scheduleId ||
-      null
+      <div className="grid gap-5 2xl:grid-cols-3 xl:grid-cols-2">
+        {searchResults.map((trip) => (
+          <div key={`${trip.schedule_id}-${trip.pickup_stop}-${trip.dropoff_stop}`} className={`${cardClassName} overflow-hidden p-6`}>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="inline-flex items-center gap-2 rounded-full bg-[#0077B6]/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-[#0077B6]">
+                  Available trip
+                </div>
+                <div className="mt-4">
+                  <RouteLine from={trip.pickup_stop} to={trip.dropoff_stop} prominent={true} />
+                </div>
+                <p className="mt-3 text-sm text-slate-500">{trip.company_name || 'SafariTix operator'}{trip.bus_plate ? ` · ${trip.bus_plate}` : ''}</p>
+              </div>
+              <div className="rounded-[22px] border border-[#0077B6]/15 bg-[#0077B6]/5 px-4 py-3 text-right">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#0077B6]">Fare</div>
+                <div className="mt-1 text-xl font-black text-slate-900">{formatCurrency(trip.price)}</div>
+              </div>
+            </div>
+
+            <div className="mt-6 grid gap-3 sm:grid-cols-3">
+              <div className={mutedCardClassName + ' p-4'}>
+                <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
+                  <Calendar className="h-4 w-4" /> Departure
+                </div>
+                <div className="mt-3 text-sm font-black text-slate-900">{formatShortDate(trip.departure_date)}</div>
+              </div>
+              <div className={mutedCardClassName + ' p-4'}>
+                <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
+                  <Clock className="h-4 w-4" /> Time
+                </div>
+                <div className="mt-3 text-sm font-black text-slate-900">{formatTime(trip.departure_time)}</div>
+              </div>
+              <div className={mutedCardClassName + ' p-4'}>
+                <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
+                  <CreditCard className="h-4 w-4" /> Seats left
+                </div>
+                <div className="mt-3 text-sm font-black text-slate-900">{trip.available_seats ?? 0} / {trip.capacity ?? 0}</div>
+              </div>
+            </div>
+
+            <div className="mt-6 flex flex-col gap-4 rounded-[24px] border border-slate-200/80 bg-slate-50/70 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm leading-6 text-slate-500">Booking will reserve {passengers} seat{passengers > 1 ? 's' : ''} for this segment.</p>
+              <button
+                onClick={() => void handleBookSeat(trip)}
+                disabled={bookingLoadingId === trip.schedule_id}
+                className={primaryButtonClassName + ' min-w-[150px]'}
+              >
+                {bookingLoadingId === trip.schedule_id ? <RefreshCw className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+                {bookingLoadingId === trip.schedule_id ? 'Booking...' : 'Book now'}
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
     );
   };
 
-  const resolveTicketId = (ticket: any): string | null => {
-    if (!ticket) return null;
-    return ticket.id || ticket.ticketId || ticket.ticket_id || null;
-  };
-
-  const handleTrackBus = (ticket: any) => {
-    if (!ticket) return;
-    setTrackedTicket(ticket);
-    setActiveTab('map');
-    setIsMobileMenuOpen(false);
-  };
-
-  useEffect(() => {
-    if (!upcomingTrips.length) return;
-    const trackable = upcomingTrips.find((t: any) => resolveScheduleId(t));
-    if (!trackedTicket && trackable) {
-      setTrackedTicket(trackable);
-      return;
-    }
-    if (trackedTicket) {
-      const stillExists = upcomingTrips.some((t: any) => resolveTicketId(t) === resolveTicketId(trackedTicket));
-      if (!stillExists && trackable) {
-        setTrackedTicket(trackable);
-      }
-    }
-  }, [upcomingTrips]);
-
-  const downloadTicket = (ticket: any) => {
-    try {
-      const el = document.getElementById('ticket-qr-canvas');
-      let qrDataUrl: string | null = null;
-      if (el) {
-        if ((el as HTMLCanvasElement).toDataURL) {
-          try { qrDataUrl = (el as HTMLCanvasElement).toDataURL('image/png'); } catch (_) { qrDataUrl = null; }
-        } else if (el instanceof SVGElement) {
-          const svg = el as SVGElement;
-          const svgStr = new XMLSerializer().serializeToString(svg);
-          qrDataUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgStr);
-        }
-      }
-
-      // Fallback: if no canvas/svg but ticket has qrData, embed it as text below
-      const passenger = ticket.passengerName || ticket.name || (user && user.name) || '';
-      const passengerEmail = ticket.passengerEmail || ticket.email || (user && (user as any).email) || '';
-      const passengerPhone = ticket.passengerPhone || ticket.phone || (user && ((user as any).phone || (user as any).phoneNumber)) || '';
-      const ref = ticket.reference || ticket.id || '';
-
-      const html = `
-        <html>
-          <head>
-            <title>SafariTix Ticket</title>
-            <meta name="viewport" content="width=device-width,initial-scale=1" />
-            <style>
-              body{font-family:Inter, Arial, Helvetica, sans-serif;margin:0;background:#f6f7fb;color:#0f172a}
-              .wrap{padding:28px}
-              .card{max-width:780px;margin:0 auto;background:white;border-radius:14px;box-shadow:0 8px 30px rgba(15,23,42,0.08);overflow:hidden;border:1px solid #e6eef8}
-              .header{display:flex;align-items:center;justify-content:space-between;padding:20px 28px;background:linear-gradient(90deg,#0077B6 0%,#005F8E 100%);color:white}
-              .brand{display:flex;align-items:center;gap:12px;font-weight:700}
-              .brand .logo{width:44px;height:44px;border-radius:10px;background:white;display:flex;align-items:center;justify-content:center;color:#0077B6;font-weight:800}
-              .content{display:flex;gap:24px;padding:28px}
-              .left{flex:1}
-              .route{font-size:20px;font-weight:800;margin-bottom:8px}
-              .meta{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-top:10px}
-              .meta .item{background:#f8fafc;padding:12px;border-radius:10px;font-size:14px}
-              .qrBox{width:260px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
-              .qrBox img{width:220px;height:220px;object-fit:contain;border-radius:8px}
-              .code{margin-top:12px;font-family:monospace;background:#0f172a;color:white;padding:8px;border-radius:6px;text-align:center}
-              .footer{padding:18px 28px;background:#fbfdff;border-top:1px solid #eef6ff;font-size:13px;color:#334155}
-            </style>
-          </head>
-          <body>
-            <div class="wrap">
-              <div class="card">
-                <div class="header">
-                  <div class="brand"><div class="logo">ST</div><div>SafariTix</div></div>
-                  <div style="text-align:right">
-                    <div style="font-size:12px;opacity:0.9">Booking Ref</div>
-                    <div style="font-weight:800">${ref}</div>
-                  </div>
-                </div>
-
-                <div class="content">
-                  <div class="left">
-                    <div class="route">${ticket.from} → ${ticket.to}</div>
-                    <div style="color:#475569;font-size:15px">${passenger}</div>
-                    <div style="color:#475569;font-size:13px;margin-top:6px">${passengerEmail ? passengerEmail : ''}</div>
-                    <div style="color:#475569;font-size:13px">${passengerPhone ? passengerPhone : ''}</div>
-                    <div class="meta">
-                      <div class="item"><strong>Date</strong><div>${new Date(ticket.date).toLocaleDateString()}</div></div>
-                      <div class="item"><strong>Time</strong><div>${ticket.time}</div></div>
-                      <div class="item"><strong>Seat</strong><div>#${ticket.seat}</div></div>
-                      <div class="item"><strong>Bus</strong><div>${ticket.bus}</div></div>
-                    </div>
-                    <div style="margin-top:16px;font-size:16px"><strong>Fare:</strong> RWF ${Number(ticket.price || 0).toLocaleString()}</div>
-                  </div>
-                  <div class="qrBox">
-                    ${qrDataUrl ? `<img src="${qrDataUrl}" alt="QR" />` : `<div style="width:220px;height:220px;border-radius:12px;background:#f1f5f9;display:flex;align-items:center;justify-content:center;color:#94a3b8">QR not available</div>`}
-                  </div>
-                </div>
-
-                <div style="padding:0 28px 18px">
-                  <div class="code">${ticket.qrCode || ticket.qrData || ''}</div>
-                </div>
-
-                <div class="footer">Present this ticket (printed or on your phone) to the driver when boarding. This ticket is non-transferable. Contact support@safaritix.example for help.</div>
-              </div>
-            </div>
-            <script>window.onload = function(){ setTimeout(()=>{ window.print(); },250); };</script>
-          </body>
-        </html>
-      `;
-
-      const w = window.open('', '_blank');
-      if (!w) {
-        alert('Popup blocked. Please allow popups to download the ticket.');
-        return;
-      }
-      w.document.open();
-      w.document.write(html);
-      w.document.close();
-    } catch (err) {
-      console.error('Download ticket error', err);
-      alert('Failed to prepare ticket for download');
-    }
-  };
-
-  const shareTicket = async (ticket: any) => {
-    try {
-      const shareUrl = `${window.location.origin}/tickets/${ticket.id}`;
-      const text = `My SafariTix ticket: ${ticket.from} → ${ticket.to} on ${new Date(ticket.date).toLocaleDateString()} (Seat #${ticket.seat})`;
-      if (navigator.share) {
-        await navigator.share({ title: 'SafariTix Ticket', text, url: shareUrl });
-        return;
-      }
-      // fallback: open social share links
-      const encodedText = encodeURIComponent(text + ' ' + shareUrl);
-      const twitter = `https://twitter.com/intent/tweet?text=${encodedText}`;
-      const whatsapp = `https://wa.me/?text=${encodedText}`;
-      const facebook = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}&quote=${encodeURIComponent(text)}`;
-      // open a small chooser
-      const chooser = window.open('', 'share', 'width=600,height=400');
-      if (!chooser) return alert('Popup blocked. Please allow popups to share the ticket.');
-      chooser.document.write(`<p style="font-family:Arial,Helvetica,sans-serif;padding:20px">Share your ticket:<br/><a href="${twitter}" target="_blank">Twitter</a> · <a href="${facebook}" target="_blank">Facebook</a> · <a href="${whatsapp}" target="_blank">WhatsApp</a></p>`);
-      chooser.document.close();
-    } catch (err) {
-      console.error('Share ticket error', err);
-      alert('Failed to share ticket');
-    }
-  };
-
-  // Check if ticket can be cancelled
-  const canCancelTicket = (ticket: any): { canCancel: boolean; reason?: string } => {
-    // Already cancelled or checked in
-    if (ticket?.status === 'CANCELLED' || ticket?.status === 'cancelled') {
-      return { canCancel: false, reason: 'Ticket already cancelled' };
-    }
-    if (ticket?.status === 'CHECKED_IN' || ticket?.status === 'checked_in') {
-      return { canCancel: false, reason: 'Cannot cancel checked-in ticket' };
-    }
-
-    // Check departure time
-    if (!ticket?.time || !ticket?.date) {
-      return { canCancel: true }; // Allow if time not set
-    }
-
-    // Combine date and time
-    const departureDateTimeStr = `${ticket.date}T${ticket.time}`;
-    const departureTime = new Date(departureDateTimeStr);
-    const now = new Date();
-    const timeDiffMinutes = (departureTime.getTime() - now.getTime()) / (1000 * 60);
-
-    if (timeDiffMinutes < 10) {
-      const minutesRemaining = Math.max(0, Math.round(timeDiffMinutes));
-      return { 
-        canCancel: false, 
-        reason: `Cannot cancel: departure in ${minutesRemaining} minute(s). Must be at least 10 minutes before departure.` 
-      };
-    }
-
-    return { canCancel: true };
-  };
-
-  // Handle ticket cancellation
-  const handleCancelTicket = async (ticket: any) => {
-    const cancelCheck = canCancelTicket(ticket);
-    if (!cancelCheck.canCancel) {
-      alert(cancelCheck.reason || 'Cannot cancel this ticket');
-      return;
-    }
-
-    if (!confirm('Are you sure you want to cancel this ticket? This action cannot be undone.')) {
-      return;
-    }
-
-    setCancelling(true);
-    try {
-      const hdrs: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-      if (accessToken) hdrs['Authorization'] = `Bearer ${accessToken}`;
-
-      const response = await fetch(`/api/tickets/${ticket.id}/cancel`, {
-        method: 'PATCH',
-        headers: hdrs,
-      });
-
-      const data = await response.json();
-
-      if (response.ok && data.success !== false) {
-        alert(data.message || 'Ticket cancelled successfully');
-        // Update ticket status in state
-        setSelectedTicket({ ...ticket, status: 'CANCELLED' });
-        // Refresh tickets
-        fetchTickets();
-      } else {
-        alert(data.error || data.message || 'Failed to cancel ticket');
-      }
-    } catch (error) {
-      console.error('Failed to cancel ticket:', error);
-      alert('Failed to cancel ticket. Please try again.');
-    } finally {
-      setCancelling(false);
-    }
-  };
-
-  const renderHome = () => (
-    <div className="space-y-6">
-      {/* Hero Section - Next Trip */}
-      {upcomingTrips.length > 0 && (
-        <div className="bg-gradient-to-br from-[#0077B6] to-[#005F8E] rounded-3xl p-8 text-white shadow-2xl relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -mr-32 -mt-32"></div>
-          <div className="absolute bottom-0 left-0 w-48 h-48 bg-white/5 rounded-full -ml-24 -mb-24"></div>
-          
-          <div className="relative z-10">
-            <div className="flex items-center gap-2 mb-4">
-              <div className="bg-white/20 backdrop-blur-sm px-4 py-1.5 rounded-full text-sm font-semibold">
-                Your Next Trip
-              </div>
-            </div>
-            
-            <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
-              <div className="flex-1">
-                <div className="text-4xl font-bold mb-3">
-                  {upcomingTrips[0].from} → {upcomingTrips[0].to}
-                </div>
-                
-                <div className="grid grid-cols-3 gap-4 mb-6">
-                  <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
-                    <div className="flex items-center gap-2 text-white/80 text-sm mb-1">
-                      <Calendar className="w-4 h-4" />
-                      Date
-                    </div>
-                    <div className="font-bold text-lg">
-                      {new Date(upcomingTrips[0].date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                    </div>
-                  </div>
-                  
-                  <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
-                    <div className="flex items-center gap-2 text-white/80 text-sm mb-1">
-                      <Clock className="w-4 h-4" />
-                      Time
-                    </div>
-                    <div className="font-bold text-lg">{upcomingTrips[0].time}</div>
-                  </div>
-                  
-                  <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
-                    <div className="flex items-center gap-2 text-white/80 text-sm mb-1">
-                      <Bus className="w-4 h-4" />
-                      Seat
-                    </div>
-                    <div className="font-bold text-lg">{upcomingTrips[0].seat}</div>
-                  </div>
-                </div>
-                
-                <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-white/80">
-                      <CreditCard className="w-4 h-4" />
-                      <span>Total Fare</span>
-                    </div>
-                    <div className="font-bold text-2xl">RWF {upcomingTrips[0].price.toLocaleString()}</div>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="flex lg:flex-col gap-3">
-                <button
-                  onClick={() => {
-                    setSelectedTicket(upcomingTrips[0]);
-                    setShowTicketModal(true);
-                  }}
-                  className="flex-1 lg:flex-initial bg-white text-[#0077B6] px-6 py-3 rounded-xl font-bold shadow-xl hover:shadow-2xl transition-all duration-300 hover:scale-105 flex items-center justify-center gap-2"
-                >
-                  <QrCode className="w-5 h-5" />
-                  View Ticket
-                </button>
-                <button
-                  onClick={() => handleTrackBus(upcomingTrips[0])}
-                  className="flex-1 lg:flex-initial bg-white/10 backdrop-blur-sm text-white border-2 border-white/30 px-6 py-3 rounded-xl font-bold hover:bg-white/20 transition-all duration-300 flex items-center justify-center gap-2"
-                >
-                  <Navigation className="w-5 h-5" />
-                  Track Bus
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Quick Search */}
-      <div className="bg-white rounded-2xl shadow-xl p-6 lg:p-8 border border-gray-100">
-        <h3 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-3">
-          <div className="w-10 h-10 bg-[#0077B6]/10 rounded-xl flex items-center justify-center">
-            <Search className="w-5 h-5 text-[#0077B6]" />
-          </div>
-          Find Your Next Trip
-        </h3>
-        
-        <form onSubmit={handleSearch} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">From</label>
-              <div className="relative">
-                <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Departure city"
-                  value={fromInput}
-                  onChange={(e) => setFromInput(e.target.value)}
-                  className="w-full pl-12 pr-4 py-4 rounded-xl border-2 border-gray-200 focus:border-[#0077B6] focus:outline-none transition-all text-gray-900 font-medium"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">To</label>
-              <div className="relative">
-                <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Arrival city"
-                  value={toInput}
-                  onChange={(e) => setToInput(e.target.value)}
-                  className="w-full pl-12 pr-4 py-4 rounded-xl border-2 border-gray-200 focus:border-[#0077B6] focus:outline-none transition-all text-gray-900 font-medium"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Date (Optional)</label>
-              <div className="relative">
-                <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <input
-                  type="date"
-                  placeholder="Travel date"
-                  value={dateInput}
-                  onChange={(e) => setDateInput(e.target.value)}
-                  min={new Date().toISOString().split('T')[0]}
-                  className="w-full pl-12 pr-4 py-4 rounded-xl border-2 border-gray-200 focus:border-[#0077B6] focus:outline-none transition-all text-gray-900 font-medium"
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="flex justify-center mt-2">
-            <button
-              type="submit"
-              className="w-full md:w-1/2 lg:w-1/3 bg-[#0077B6] text-white py-4 rounded-xl font-bold text-lg hover:bg-[#005F8E] transition-all duration-300 flex items-center justify-center gap-2 shadow-lg hover:shadow-xl"
-            >
-              Search Buses
-              <ArrowRight className="w-5 h-5" />
-            </button>
-          </div>
-        </form>
-
-        {searchError && (
-          <div className="mt-3 flex items-center gap-3">
-            <div className="text-sm text-red-600">{searchError}</div>
-            <button onClick={() => handleSearch()} className="text-sm px-3 py-1 bg-[#0077B6] text-white rounded">Try again</button>
-          </div>
-        )}
-
-        {searchLoading && <div className="mt-3 text-sm text-gray-600">Searching for schedules...</div>}
-
-        {searchLoading && <div className="mt-4 text-sm text-gray-600">Searching...</div>}
-
-        {!searchLoading && searchPerformed && searchResults.length === 0 && (
-          <div className="mt-4 p-4 bg-yellow-50 text-yellow-800 rounded-lg">No schedules available for this route at the moment.</div>
-        )}
-
-        {searchResults.length > 0 && (
-          <div className="mt-4">
-            <SearchResults
-              results={searchResults}
-              onSelect={(s) => { setSelectedTicket(s); setShowTicketModal(true); }}
-            />
-          </div>
-        )}
-      </div>
-
-      {/* Popular Routes (redesigned) */}
-      <div>
-        <PopularRoutes
-          routes={popularRoutes.map((s: any): PopularRoute => ({
-            id: s.id || Math.random() * 100000,
-            from: s.routeFrom || s.from || s.origin || s.from_location || s.from_location_name || 'Unknown',
-            to: s.routeTo || s.to || s.destination || s.to_location || s.to_location_name || 'Unknown',
-            departureDate: s.date || s.departureDate || s.departure_date || (s.schedule_date ? s.schedule_date : new Date().toISOString().slice(0,10)),
-            departureTime: s.time || s.departureTime || s.departure_time || s.start_time || '08:00 AM',
-            duration: s.duration || calcDuration(s.departureTime || s.departure_time || s.start_time, s.arrivalTime || s.arrival_time || s.end_time) || s.duration,
-            price: Number(s.price ?? s.fare ?? s.price_per_seat ?? 0),
-            availableSeats: Number(s.seatsAvailable ?? s.availableSeats ?? s.available_seats ?? (s.totalSeats ? s.totalSeats - (s.soldSeats||0) : 0)),
-            totalSeats: Number(s.totalSeats ?? s.total_seats ?? s.capacity ?? 0),
-            company: s.company || s.operator || s.companyName || '',
-            popular: !!s.popular,
-          }))}
-          onSelect={(r) => { setSelectedTicket(r); setShowTicketModal(true); }}
+  const renderBookings = () => {
+    if (ticketsLoading) {
+      return (
+        <EmptyPanel
+          icon={RefreshCw}
+          title="Loading your bookings"
+          description="Preparing your active tickets, seat assignments, and boarding codes."
+          spinning={true}
         />
-      </div>
+      );
+    }
 
-      {/* Quick Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-2xl p-6 border border-blue-200">
-          <div className="text-blue-600 text-sm font-semibold mb-2">Total Trips</div>
-          <div className="text-3xl font-bold text-blue-900">{loading.stats ? '—' : Number(stats.totalTrips || 0).toLocaleString()}</div>
-        </div>
-        
-        <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-2xl p-6 border border-green-200">
-          <div className="text-green-600 text-sm font-semibold mb-2">Active Tickets</div>
-          <div className="text-3xl font-bold text-green-900">{loading.stats ? '—' : Number(stats.activeTickets ?? upcomingTrips.length).toLocaleString()}</div>
-        </div>
-        
-        <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-2xl p-6 border border-purple-200">
-          <div className="text-purple-600 text-sm font-semibold mb-2">Favorite Routes</div>
-          <div className="text-3xl font-bold text-purple-900">{loading.stats ? '—' : Number(stats.favoriteRoutes || 0).toLocaleString()}</div>
-        </div>
-        
-        <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-2xl p-6 border border-orange-200">
-          <div className="text-orange-600 text-sm font-semibold mb-2">Rewards Points</div>
-          <div className="text-3xl font-bold text-orange-900">{loading.stats ? '—' : Number(stats.rewardsPoints || 0).toLocaleString()}</div>
-        </div>
-      </div>
-    </div>
-  );
+    if (tickets.length === 0) {
+      return (
+        <EmptyPanel
+          icon={Ticket}
+          title="No bookings yet"
+          description="Book a trip to see your tickets, boarding QR codes, and trip details here."
+        />
+      );
+    }
 
-  const renderTickets = () => (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold text-gray-900">My Tickets</h2>
-        <button className="bg-[#0077B6] text-white px-6 py-3 rounded-xl font-semibold hover:bg-[#005F8E] transition-all duration-300 flex items-center gap-2">
-          <Plus className="w-5 h-5" />
-          Book New Ticket
-        </button>
-      </div>
-
-      {/* Upcoming Tickets */}
-      <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-100">
-        <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
-          <Ticket className="w-6 h-6 text-[#0077B6]" />
-          Upcoming Trips
-        </h3>
-        
-        <div className="space-y-4">
-          {upcomingTrips.map((trip) => (
-            <div
-              key={trip.id}
-              className="border-2 border-gray-100 rounded-xl p-6 hover:border-[#0077B6] hover:shadow-lg transition-all duration-300 cursor-pointer"
-              onClick={() => {
-                setSelectedTicket(trip);
-                setShowTicketModal(true);
-              }}
-            >
-              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="w-12 h-12 bg-[#0077B6]/10 rounded-xl flex items-center justify-center">
-                      <Bus className="w-6 h-6 text-[#0077B6]" />
-                    </div>
-                    <div>
-                      <div className="text-xl font-bold text-gray-900">
-                        {trip.from} → {trip.to}
-                      </div>
-                      <div className="text-sm text-gray-500">Bus #{trip.bus}</div>
-                    </div>
-                  </div>
-                  
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    <div>
-                      <div className="text-xs text-gray-500 mb-1">Date</div>
-                      <div className="font-semibold text-gray-900">
-                        {new Date(trip.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-gray-500 mb-1">Time</div>
-                      <div className="font-semibold text-gray-900">{trip.time}</div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-gray-500 mb-1">Seat</div>
-                      <div className="font-semibold text-gray-900">#{trip.seat}</div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-gray-500 mb-1">Price</div>
-                      <div className="font-semibold text-[#0077B6]">
-                        RWF {trip.price.toLocaleString()}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="flex lg:flex-col gap-2">
-                  <span className="inline-flex items-center gap-2 bg-green-100 text-green-700 px-4 py-2 rounded-lg font-semibold text-sm">
-                    <Check className="w-4 h-4" />
-                    Confirmed
-                  </span>
-                  <button className="bg-[#0077B6]/10 text-[#0077B6] px-4 py-2 rounded-lg font-semibold text-sm hover:bg-[#0077B6] hover:text-white transition-all duration-300 flex items-center gap-2">
-                    <QrCode className="w-4 h-4" />
-                    View QR
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleTrackBus(trip);
-                    }}
-                    className="bg-green-50 text-green-700 px-4 py-2 rounded-lg font-semibold text-sm hover:bg-green-600 hover:text-white transition-all duration-300 flex items-center gap-2"
-                  >
-                    <Navigation className="w-4 h-4" />
-                    Track Bus
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Recent Bookings */}
-      <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-100">
-        <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
-          <History className="w-6 h-6 text-[#0077B6]" />
-          Recent Bookings
-        </h3>
-        
-        <div className="space-y-3">
-          {recentBookings.map((booking) => (
-            <div
-              key={booking.id}
-              className="flex items-center justify-between p-4 rounded-xl border border-gray-100 hover:border-gray-200 hover:shadow-md transition-all duration-300"
-            >
-              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
-                  <Bus className="w-5 h-5 text-gray-600" />
-                </div>
+    return (
+      <div className="space-y-5">
+        {tickets.map((ticket) => (
+          <div key={ticket.id} className={`${cardClassName} overflow-hidden`}>
+            <div className="border-b border-slate-100 bg-[linear-gradient(135deg,#031b34_0%,#0077B6_60%,#35A4E6_100%)] px-6 py-6 text-white">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div>
-                  <div className="font-semibold text-gray-900">{booking.route}</div>
-                  <div className="text-sm text-gray-500">{booking.date}</div>
+                  <div className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-sky-50">Active boarding pass</div>
+                  <div className="mt-4">
+                    <RouteLine from={ticket.fromStop} to={ticket.toStop} prominent={true} light={true} />
+                  </div>
+                  <p className="mt-3 text-sm text-sky-50/90">{formatDate(ticket.scheduleDate)} · {formatTime(ticket.departureTime)} · Seat {ticket.seatNumber}</p>
+                </div>
+                <span className={`inline-flex h-fit items-center rounded-full px-4 py-2 text-xs font-bold uppercase tracking-[0.24em] ${statusTone[ticket.status] || 'border border-slate-200 bg-white/15 text-white'}`}>
+                  {ticket.status}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid gap-5 px-6 py-6 xl:grid-cols-[1.35fr_0.95fr]">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className={mutedCardClassName + ' p-4'}>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Reference</div>
+                  <div className="mt-2 font-mono text-sm font-bold text-slate-900">{ticket.bookingRef || ticket.id}</div>
+                </div>
+                <div className={mutedCardClassName + ' p-4'}>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Bus</div>
+                  <div className="mt-2 text-sm font-bold text-slate-900">{ticket.busPlate}</div>
+                </div>
+                <div className={mutedCardClassName + ' p-4'}>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Passenger</div>
+                  <div className="mt-2 text-sm font-bold text-slate-900">{user?.name || 'Commuter'}</div>
+                </div>
+                <div className={mutedCardClassName + ' p-4'}>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Price</div>
+                  <div className="mt-2 text-sm font-bold text-slate-900">{formatCurrency(ticket.price)}</div>
                 </div>
               </div>
-              
-              <div className="text-right">
-                <div className="font-bold text-gray-900">RWF {booking.price.toLocaleString()}</div>
-                <div className="text-xs text-gray-500 capitalize">{booking.status}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
 
-  const renderProfile = () => (
-    <div className="space-y-6">
-      <h2 className="text-3xl font-bold text-gray-900">Profile Settings</h2>
-
-      {/* Profile Card (view / edit) */}
-      {!editingProfile ? (
-        <div className="bg-gradient-to-br from-[#0077B6] to-[#005F8E] rounded-2xl p-8 text-white shadow-2xl">
-          <div className="flex flex-col md:flex-row items-center gap-6">
-            <div className="w-24 h-24 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center border-4 border-white/30">
-              <User className="w-12 h-12" />
-            </div>
-            <div className="text-center md:text-left flex-1">
-              <h3 className="text-2xl font-bold mb-2">{user?.name || 'John Doe'}</h3>
-              <p className="text-white/80 mb-1">{user?.email || 'john.doe@example.com'}</p>
-              <p className="text-white/80">{user?.phone || user?.phoneNumber || user?.phone_number || '+250 788 123 456'}</p>
-            </div>
-            <button onClick={() => setEditingProfile(true)} className="bg-white/20 backdrop-blur-sm border-2 border-white/30 text-white px-6 py-3 rounded-xl font-semibold hover:bg-white/30 transition-all duration-300">
-              Edit Profile
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-100">
-          <h3 className="text-xl font-bold mb-4">Edit Personal Information</h3>
-          <div className="grid grid-cols-1 gap-4">
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Full name</label>
-              <input value={profileForm.name} onChange={(e)=>setProfileForm(p=>({...p, name: e.target.value}))} className="w-full px-4 py-3 rounded-lg border border-gray-200" />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Email</label>
-              <input value={profileForm.email} onChange={(e)=>setProfileForm(p=>({...p, email: e.target.value}))} className="w-full px-4 py-3 rounded-lg border border-gray-200" />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Phone</label>
-              <input value={profileForm.phone} onChange={(e)=>setProfileForm(p=>({...p, phone: e.target.value}))} className="w-full px-4 py-3 rounded-lg border border-gray-200" />
-            </div>
-            {profileError && <div className="text-sm text-red-600">{profileError}</div>}
-            <div className="flex gap-3">
-              <button onClick={async ()=>{
-                setProfileSaving(true); setProfileError(null);
-                try {
-                  const hdrs: Record<string,string> = { 'Content-Type': 'application/json' };
-                  if (accessToken) hdrs['Authorization'] = `Bearer ${accessToken}`;
-                  const body = { full_name: profileForm.name, email: profileForm.email, phone_number: profileForm.phone };
-                  const res = await fetch('/api/auth/me', { method: 'PUT', headers: hdrs, body: JSON.stringify(body) });
-                  if (!res.ok) {
-                    const txt = await res.text(); throw new Error(txt || 'Failed to update profile');
-                  }
-                  const json = await res.json();
-                  const updated = json.user || json;
-                  // update auth context and localStorage
-                  if (signIn) await signIn(accessToken || '', updated);
-                  setEditingProfile(false);
-                } catch (err: any) {
-                  console.error('Profile save error', err);
-                  setProfileError(err.message || 'Failed to save');
-                } finally { setProfileSaving(false); }
-              }} disabled={profileSaving} className="bg-[#0077B6] text-white px-4 py-2 rounded-lg font-semibold">{profileSaving ? 'Saving…' : 'Save'}</button>
-              <button onClick={()=>{ setEditingProfile(false); setProfileError(null); setProfileForm({ name: user?.name||'', email: user?.email||'', phone: user?.phone||'' }); }} className="bg-gray-100 text-gray-900 px-4 py-2 rounded-lg">Cancel</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Settings Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-100">
-          <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
-            <Settings className="w-6 h-6 text-[#0077B6]" />
-            Account Settings
-          </h3>
-          
-          <div className="space-y-3">
-            {
-              [
-                { label: 'Personal Information', icon: User },
-                { label: 'Payment Methods', icon: CreditCard },
-                { label: 'Notifications', icon: Bell },
-                { label: 'Privacy & Security', icon: Settings },
-              ].map((item, index) => {
-                const Icon = item.icon as any;
-                return (
-                  <button
-                    key={index}
-                    onClick={() => setExpandedSetting(prev => prev === item.label ? null : item.label)}
-                    className="w-full flex items-center justify-between p-4 rounded-xl border border-gray-100 hover:border-[#0077B6] hover:shadow-md transition-all duration-300 text-left"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-[#0077B6]/10 rounded-lg flex items-center justify-center">
-                        <Icon className="w-5 h-5 text-[#0077B6]" />
-                      </div>
-                      <span className="font-semibold text-gray-900">{item.label}</span>
-                    </div>
-                    <ChevronRight className="w-5 h-5 text-gray-400" />
-                  </button>
-                );
-              })}
-          </div>
-        </div>
-
-        <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-100">
-          <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
-            <Star className="w-6 h-6 text-[#0077B6]" />
-            Rewards & Benefits
-          </h3>
-          
-          <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-xl p-6 mb-4 border border-yellow-200">
-            <div className="text-yellow-700 text-sm font-semibold mb-2">Total Points</div>
-            <div className="text-4xl font-bold text-yellow-900 mb-2">1,250</div>
-            <div className="text-sm text-yellow-600">Redeem for discounts and free trips!</div>
-          </div>
-          
-          <button className="w-full bg-[#0077B6] text-white py-3 rounded-xl font-semibold hover:bg-[#005F8E] transition-all duration-300">
-            View Rewards Catalog
-          </button>
-        </div>
-      </div>
-
-      {/* Logout */}
-      <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-100">
-        <button
-          onClick={signOut}
-          className="w-full flex items-center justify-center gap-3 bg-red-50 text-red-600 py-4 rounded-xl font-bold hover:bg-red-100 transition-all duration-300 border-2 border-red-200"
-        >
-          <LogOut className="w-5 h-5" />
-          Logout
-        </button>
-      </div>
-    </div>
-  );
-
-  const renderLiveMap = () => (
-    <div className="space-y-6">
-      {(() => {
-        const selectedTrackingTicket = trackedTicket || upcomingTrips.find((t: any) => resolveScheduleId(t));
-        const scheduleId = resolveScheduleId(selectedTrackingTicket);
-        const ticketId = resolveTicketId(selectedTrackingTicket);
-
-        if (!selectedTrackingTicket) {
-          return (
-            <div className="bg-white rounded-2xl shadow-xl p-8 border border-gray-100">
-              <div className="text-center">
-                <Navigation className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                <h3 className="text-xl font-bold text-gray-900 mb-2">No trackable booked trip</h3>
-                <p className="text-gray-600">Book or confirm a ticket first, then tap "Track Bus".</p>
-              </div>
-            </div>
-          );
-        }
-
-        if (!scheduleId || !ticketId) {
-          return (
-            <div className="bg-amber-50 rounded-2xl p-6 border border-amber-200">
-              <h3 className="text-lg font-semibold text-amber-900 mb-1">Tracking unavailable for this ticket</h3>
-              <p className="text-amber-800 text-sm">
-                This ticket is missing schedule linking information from backend response.
-              </p>
-            </div>
-          );
-        }
-
-        return (
-          <PassengerTracking
-            scheduleId={String(scheduleId)}
-            ticketId={String(ticketId)}
-            routeFrom={selectedTrackingTicket.from || selectedTrackingTicket.routeFrom}
-            routeTo={selectedTrackingTicket.to || selectedTrackingTicket.routeTo}
-            departureTime={selectedTrackingTicket.departureTime || selectedTrackingTicket.time || selectedTrackingTicket.date}
-            arrivalTime={selectedTrackingTicket.arrivalTime}
-            autoStart
-          />
-        );
-      })()}
-
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-3xl font-bold text-gray-900">Live Driver Tracking</h2>
-          <p className="text-gray-600 mt-1">Track active buses in real-time</p>
-        </div>
-        <div className="flex items-center gap-2 text-sm">
-          <div className="w-3 h-3 bg-[#0077B6] rounded-full animate-pulse"></div>
-          <span className="text-gray-600">Live Updates</span>
-        </div>
-      </div>
-
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-2xl p-6 border border-blue-200">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-blue-600 text-sm font-semibold mb-1">Active Buses</div>
-              <div className="text-3xl font-bold text-blue-900">
-                {mapLoading ? '—' : driverLocations.filter(d => d.status === 'active').length}
-              </div>
-            </div>
-            <Bus className="w-10 h-10 text-blue-500 opacity-50" />
-          </div>
-        </div>
-
-        <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-2xl p-6 border border-green-200">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-green-600 text-sm font-semibold mb-1">Total Drivers</div>
-              <div className="text-3xl font-bold text-green-900">
-                {mapLoading ? '—' : driverLocations.length}
-              </div>
-            </div>
-            <User className="w-10 h-10 text-green-500 opacity-50" />
-          </div>
-        </div>
-
-        <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-2xl p-6 border border-purple-200">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-purple-600 text-sm font-semibold mb-1">Tracking</div>
-              <div className="text-3xl font-bold text-purple-900">
-                {mapLoading ? '—' : driverLocations.filter(d => d.latitude !== 0 && d.longitude !== 0).length}
-              </div>
-            </div>
-            <MapPin className="w-10 h-10 text-purple-500 opacity-50" />
-          </div>
-        </div>
-      </div>
-
-      {/* Legacy Mapbox fleet map (optional) */}
-      {hasMapboxToken && (
-        <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
-          <div className="p-4 border-b border-gray-200">
-            <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-              <MapPin className="w-6 h-6 text-[#0077B6]" />
-              Live Map View
-            </h3>
-          </div>
-
-          {mapLoading && !map.current ? (
-            <div className="h-[500px] flex items-center justify-center">
-              <div className="text-center">
-                <Loader2 className="w-12 h-12 text-[#0077B6] animate-spin mx-auto mb-4" />
-                <p className="text-gray-600">Loading map...</p>
-              </div>
-            </div>
-          ) : (
-            <div
-              ref={mapContainer}
-              style={{ width: '100%', height: '500px' }}
-            />
-          )}
-        </div>
-      )}
-
-      {/* Driver List */}
-      {driverLocations.length > 0 ? (
-        <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-100">
-          <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
-            <Bus className="w-6 h-6 text-[#0077B6]" />
-            Active Drivers ({driverLocations.length})
-          </h3>
-
-          <div className="space-y-3">
-            {driverLocations.map((driver) => (
-              <div
-                key={driver.id}
-                className="flex items-center justify-between p-4 rounded-xl border border-gray-100 hover:border-[#0077B6] hover:shadow-md transition-all duration-300"
-              >
-                <div className="flex items-center gap-4">
-                  <div className={`w-12 h-12 rounded-full flex items-center justify-center text-2xl ${
-                    driver.status === 'active' ? 'bg-green-100' : 'bg-gray-100'
-                  }`}>
-                    🚌
-                  </div>
+              <div className="rounded-[26px] border border-slate-200/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] p-5">
+                <div className="mb-3 flex items-center justify-between">
                   <div>
-                    <div className="font-bold text-gray-900">{driver.plateNumber}</div>
-                    <div className="text-sm text-gray-600">{driver.driverName}</div>
-                    <div className="text-xs text-gray-500">{driver.model}</div>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Boarding QR</div>
+                    <div className="mt-1 text-sm font-bold text-slate-900">Ready to scan at boarding</div>
                   </div>
+                  <QrPreview value={ticket.bookingRef || ticket.id} />
+                </div>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  <button onClick={() => setViewTicket(ticket)} className={primaryButtonClassName + ' !rounded-[20px] !px-4 !py-3'}>
+                    <Eye className="h-4 w-4" /> View
+                  </button>
+                  <button onClick={() => void shareTicket(ticket)} className={secondaryButtonClassName + ' !rounded-[20px] !px-4 !py-3'}>
+                    <Share2 className="h-4 w-4" /> Share
+                  </button>
+                  <button
+                    onClick={() => openTracking(ticket)}
+                    disabled={!isTrackableTicket(ticket)}
+                    className="inline-flex items-center justify-center gap-2 rounded-[20px] border border-[#0077B6]/20 bg-[#0077B6]/8 px-4 py-3 text-sm font-bold text-[#0077B6] transition hover:bg-[#0077B6]/12 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Navigation className="h-4 w-4" /> Track
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const renderTracking = () => {
+    if (!selectedTrackingTicket) {
+      return (
+        <EmptyPanel
+          icon={Navigation}
+          title="You have no active trips to track"
+          description="Confirmed upcoming trips will appear here automatically when a schedule is available for live tracking."
+        />
+      );
+    }
+
+    return (
+      <div className="grid gap-6 xl:grid-cols-[340px_minmax(0,1fr)]">
+        <div className={`${cardClassName} p-5`}>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#0077B6]">Track Bus</div>
+              <h3 className="mt-2 text-xl font-black text-slate-900">Active trips</h3>
+              <p className="mt-2 text-sm text-slate-500">Choose the ticket you want to follow live.</p>
+            </div>
+            <span className="rounded-full bg-[#0077B6]/10 px-3 py-1 text-xs font-bold text-[#0077B6]">{trackableTickets.length}</span>
+          </div>
+
+          <div className="mt-5 rounded-[24px] border border-slate-200/80 bg-[linear-gradient(180deg,#f8fbff_0%,#ffffff_100%)] p-4">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+              {metricCard('Trackable trips', String(trackableTickets.length), 'text-slate-900')}
+              {metricCard('Booked seats', String(tickets.length), 'text-slate-900')}
+            </div>
+          </div>
+
+          <div className="mt-5 space-y-3">
+            {trackableTickets.map((ticket) => (
+              <button
+                key={ticket.id}
+                onClick={() => setSelectedTrackingTicketId(ticket.id)}
+                className={`w-full rounded-[24px] border p-4 text-left transition ${selectedTrackingTicket.id === ticket.id ? 'border-[#0077B6]/30 bg-[#0077B6]/8 shadow-[0_12px_30px_rgba(0,119,182,0.12)]' : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/80'}`}
+              >
+                <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">{formatShortDate(ticket.scheduleDate)}</div>
+                <div className="mt-3"><RouteLine from={ticket.fromStop} to={ticket.toStop} /></div>
+                <div className="mt-2 text-sm text-slate-500">Seat {ticket.seatNumber} · {formatTime(ticket.departureTime)}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-6">
+          <div className={`${cardClassName} overflow-hidden`}>
+            <div className="bg-[linear-gradient(135deg,#031b34_0%,#0077B6_60%,#35A4E6_100%)] px-6 py-6 text-white">
+              <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <div className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-sky-50">Currently selected</div>
+                  <div className="mt-4">
+                    <RouteLine from={selectedTrackingTicket.fromStop} to={selectedTrackingTicket.toStop} prominent={true} light={true} />
+                  </div>
+                  <p className="mt-3 text-sm text-sky-50/90">Reference {selectedTrackingTicket.bookingRef} · Bus {selectedTrackingTicket.busPlate}</p>
+                </div>
+                <span className={`inline-flex h-fit items-center rounded-full px-4 py-2 text-xs font-bold uppercase tracking-[0.24em] ${statusTone[selectedTrackingTicket.status] || 'border border-white/20 bg-white/15 text-white'}`}>
+                  {selectedTrackingTicket.status}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid gap-4 px-6 py-6 md:grid-cols-4">
+              {metricCard('Departure', formatShortDate(selectedTrackingTicket.scheduleDate), 'text-slate-900')}
+              {metricCard('Time', formatTime(selectedTrackingTicket.departureTime), 'text-slate-900')}
+              {metricCard('Seat', selectedTrackingTicket.seatNumber, 'text-slate-900')}
+              {metricCard('Reference', selectedTrackingTicket.bookingRef, 'text-[#0077B6]')}
+            </div>
+          </div>
+
+          <PassengerTracking
+            scheduleId={selectedTrackingTicket.scheduleId}
+            ticketId={selectedTrackingTicket.id}
+            routeFrom={selectedTrackingTicket.fromStop}
+            routeTo={selectedTrackingTicket.toStop}
+            departureTime={selectedTrackingTicket.departureTime || undefined}
+            autoStart={true}
+          />
+        </div>
+      </div>
+    );
+  };
+
+  const renderHistory = () => {
+    const completedCount = historyTickets.filter((ticket) => ticket.status === 'COMPLETED').length;
+    const cancelledCount = historyTickets.filter((ticket) => ticket.status === 'CANCELLED').length;
+
+    return (
+      <div className="space-y-6">
+        <div className={`${cardClassName} p-6`}>
+          <SectionHeader
+            eyebrow="Trip History"
+            title="Your recent travel archive"
+            description="Review completed and cancelled trips, seat details, and how much you have spent through SafariTix."
+          />
+
+          <div className="mt-6 grid gap-4 md:grid-cols-4">
+            {metricCard('History', String(historyTickets.length), 'text-slate-900')}
+            {metricCard('Completed', String(completedCount), 'text-emerald-600')}
+            {metricCard('Cancelled', String(cancelledCount), 'text-rose-600')}
+            {metricCard('Spent', formatCurrency(totalSpent), 'text-[#0077B6]')}
+          </div>
+        </div>
+
+        {historyTickets.length === 0 ? (
+          <EmptyPanel
+            icon={History}
+            title="No trip history yet"
+            description="Completed and cancelled trips will appear here automatically once you have traveled."
+          />
+        ) : (
+          <div className="grid gap-5 xl:grid-cols-2">
+            {historyTickets.map((ticket) => (
+              <div key={ticket.id} className={`${cardClassName} p-6`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">Archived trip</div>
+                    <div className="mt-4"><RouteLine from={ticket.fromStop} to={ticket.toStop} prominent={true} /></div>
+                    <p className="mt-3 text-sm text-slate-500">{formatDate(ticket.scheduleDate)} · {formatTime(ticket.departureTime)}</p>
+                  </div>
+                  <span className={`inline-flex h-fit items-center rounded-full px-4 py-2 text-xs font-bold uppercase tracking-[0.24em] ${statusTone[ticket.status] || 'border border-slate-200 bg-slate-100 text-slate-700'}`}>
+                    {ticket.status}
+                  </span>
                 </div>
 
-                <div className="text-right">
-                  <div className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold ${
-                    driver.status === 'active' 
-                      ? 'bg-green-100 text-green-700' 
-                      : 'bg-gray-100 text-gray-600'
-                  }`}>
-                    <div className={`w-2 h-2 rounded-full ${
-                      driver.status === 'active' ? 'bg-green-500' : 'bg-gray-400'
-                    }`}></div>
-                    {driver.status === 'active' ? 'On Trip' : 'Idle'}
+                <div className="mt-6 grid gap-3 sm:grid-cols-3">
+                  <div className={mutedCardClassName + ' p-4'}>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Seat</div>
+                    <div className="mt-2 text-sm font-black text-slate-900">{ticket.seatNumber}</div>
                   </div>
-                  <div className="text-sm text-gray-500 mt-1">
-                    {driver.speed.toFixed(1)} km/h
+                  <div className={mutedCardClassName + ' p-4'}>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Bus</div>
+                    <div className="mt-2 text-sm font-black text-slate-900">{ticket.busPlate}</div>
+                  </div>
+                  <div className={mutedCardClassName + ' p-4'}>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Fare</div>
+                    <div className="mt-2 text-sm font-black text-slate-900">{formatCurrency(ticket.price)}</div>
                   </div>
                 </div>
               </div>
             ))}
           </div>
-        </div>
-      ) : (
-        <div className="bg-white rounded-2xl shadow-xl p-8 border border-gray-100">
-          <div className="text-center">
-            <Bus className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-            <h3 className="text-xl font-bold text-gray-900 mb-2">No Active Trips</h3>
-            <p className="text-gray-600">
-              No drivers are currently sharing their location. Check back later to see active trips.
-            </p>
+        )}
+      </div>
+    );
+  };
+
+  const renderHelp = () => {
+    return (
+      <div className="space-y-6">
+        <div className={`${cardClassName} p-6`}>
+          <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr] xl:items-center">
+            <div>
+              <SectionHeader
+                eyebrow="Help Center"
+                title="Support built into your commuter dashboard"
+                description="Travel alerts, booking help, and direct support contacts are available here whenever you need them."
+              />
+              <div className="mt-6 grid gap-4 md:grid-cols-3">
+                {metricCard('Active trips', String(trackableTickets.length), 'text-slate-900')}
+                {metricCard('Past journeys', String(historyTickets.length), 'text-slate-900')}
+                {metricCard('Unread alerts', String(unreadNotifications.length), 'text-amber-600')}
+              </div>
+            </div>
+            <div className="rounded-[28px] bg-[linear-gradient(135deg,#031b34_0%,#0077B6_62%,#35A4E6_100%)] p-6 text-white shadow-[0_24px_50px_rgba(0,119,182,0.22)]">
+              <div className="flex items-center gap-3">
+                <div className="rounded-2xl bg-white/15 p-3">
+                  <Bell className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-sky-50/90">Priority support</div>
+                  <div className="mt-1 text-2xl font-black">Travel assistance</div>
+                </div>
+              </div>
+              <p className="mt-4 text-sm leading-6 text-sky-50/90">If your trip changes, boarding details update, or you need help with a booking, this panel keeps everything within reach.</p>
+            </div>
           </div>
         </div>
-      )}
-    </div>
-  );
 
-  const renderNotifications = () => (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold text-gray-900">Notifications</h2>
-        <button className="text-[#0077B6] font-semibold hover:underline">Mark all as read</button>
-      </div>
+        <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+          <div className={`${cardClassName} p-6`}>
+            <SectionHeader
+              eyebrow="Notifications"
+              title="Recent support and trip updates"
+              description="Latest alerts connected to your travel, booking, and account activity."
+            />
 
-      <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-100">
-        <div className="space-y-4">
-          {notifications.map((notif) => (
-            <div
-              key={notif.id}
-              className="flex items-start gap-4 p-4 rounded-xl border border-gray-100 hover:border-[#0077B6] hover:shadow-md transition-all duration-300"
-            >
-              <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                notif.type === 'info' ? 'bg-blue-100' :
-                notif.type === 'success' ? 'bg-green-100' :
-                'bg-yellow-100'
-              }`}> 
-                {notif.type === 'info' && <AlertCircle className="w-5 h-5 text-blue-600" />}
-                {notif.type === 'success' && <Check className="w-5 h-5 text-green-600" />}
-                {notif.type === 'warning' && <AlertCircle className="w-5 h-5 text-yellow-600" />}
+            {notificationsLoading ? (
+              <div className="mt-6 rounded-[24px] border border-slate-200/80 bg-slate-50/80 p-6 text-center text-sm font-semibold text-slate-500">Loading notifications...</div>
+            ) : notifications.length === 0 ? (
+              <div className="mt-6 rounded-[24px] border border-slate-200/80 bg-slate-50/80 p-6 text-center text-sm text-slate-500">No support notifications yet.</div>
+            ) : (
+              <div className="mt-6 space-y-3">
+                {notifications.map((notification) => (
+                  <div key={notification.id} className="rounded-[24px] border border-slate-200/80 bg-slate-50/70 p-5">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-base font-black text-slate-900">{notification.title}</div>
+                        <div className="mt-2 text-sm leading-6 text-slate-600">{notification.message}</div>
+                      </div>
+                      {!notification.isRead && <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-amber-700">New</span>}
+                    </div>
+                    <div className="mt-4 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">{notification.createdAt ? new Date(notification.createdAt).toLocaleString() : 'Recently'}</div>
+                  </div>
+                ))}
               </div>
-              
-              <div className="flex-1">
-                <p className="font-semibold text-gray-900 mb-1">{notif.message}</p>
-                <p className="text-sm text-gray-500">{notif.time}</p>
+            )}
+
+            {notificationsError && (
+              <div className="mt-4 flex items-start gap-2 rounded-[22px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{notificationsError}</span>
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-6">
+            <div className={`${cardClassName} p-6`}>
+              <SectionHeader
+                eyebrow="Quick Actions"
+                title="Get where you need to go"
+                description="Fast links to the most important commuter tasks."
+              />
+              <div className="mt-5 grid gap-3">
+                <ShortcutCard
+                  icon={Ticket}
+                  title="Open My Bookings"
+                  description="View your boarding passes and seat details."
+                  onClick={() => setActiveTab('bookings')}
+                />
+                <ShortcutCard
+                  icon={Navigation}
+                  title="Track a Bus"
+                  description="See live location, ETA, and route progress."
+                  onClick={() => setActiveTab('map')}
+                />
+                <ShortcutCard
+                  icon={Search}
+                  title="Book another trip"
+                  description="Search shared routes and reserve a seat."
+                  onClick={() => setActiveTab('shared')}
+                />
               </div>
             </div>
-          ))}
+
+            <div className={`${cardClassName} p-6`}>
+              <SectionHeader
+                eyebrow="Support Contacts"
+                title="Reach SafariTix support"
+                description="Dedicated commuter help channels and support windows."
+              />
+              <div className="mt-5 space-y-4 text-sm text-slate-600">
+                <ContactCard label="Email support" value="safaritixrwanda@gmail.com" />
+                <ContactCard label="Phone assistance" value="+250 793 216 602" />
+                <ContactCard label="Support hours" value="Every day, 06:00 - 22:00 CAT" />
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
+
+  const renderSharedTab = () => {
+    return (
+      <div className="space-y-6">
+        <div className={`${cardClassName} overflow-hidden`}>
+          <div className="relative overflow-hidden bg-[linear-gradient(135deg,#031b34_0%,#0077B6_58%,#78c9f2_100%)] px-6 py-6 text-white lg:px-8 lg:py-8">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.18),transparent_28%),radial-gradient(circle_at_bottom_left,rgba(255,255,255,0.12),transparent_30%)]" />
+            <div className="relative grid gap-8 xl:grid-cols-[1.12fr_0.88fr]">
+              <div>
+                <div className="inline-flex items-center gap-2 rounded-full bg-white/15 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.26em] text-sky-50">
+                  <Bus className="h-4 w-4" /> Digital commuter platform
+                </div>
+                <h1 className="mt-5 max-w-3xl text-4xl font-black leading-[1.05] text-white lg:text-5xl">Book faster, manage live tickets, and track every journey with confidence.</h1>
+                <p className="mt-5 max-w-2xl text-sm leading-7 text-sky-50/90 lg:text-base">SafariTix brings booking, boarding passes, and live trip visibility into one modern commuter workspace designed for daily transport.
+                </p>
+
+                <div className="mt-7 grid gap-4 md:grid-cols-3">
+                  {metricCard('Upcoming trips', String(trackableTickets.length), 'text-slate-900')}
+                  {metricCard('Booked tickets', String(tickets.length), 'text-slate-900')}
+                  {metricCard('Unread alerts', String(unreadNotifications.length), 'text-[#0077B6]')}
+                </div>
+              </div>
+
+              <form onSubmit={handleSearch} className="rounded-[30px] border border-white/20 bg-white p-5 text-slate-900 shadow-[0_30px_60px_rgba(8,47,73,0.22)] lg:p-6">
+                <SectionHeader
+                  eyebrow="Search Trips"
+                  title="Find your next seat"
+                  description="Search available buses by route, date, and passenger count."
+                />
+
+                <div className="mt-5 grid gap-4">
+                  <label className="block">
+                    <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">From</span>
+                    <div className="relative">
+                      <MapPin className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                      <input list="commuter-stop-options-from" value={fromLocation} onChange={(event) => setFromLocation(event.target.value)} placeholder="Select departure" className={fieldClassName + ' pl-12'} />
+                    </div>
+                  </label>
+
+                  <label className="block">
+                    <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">To</span>
+                    <div className="relative">
+                      <MapPin className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                      <input list="commuter-stop-options-to" value={toLocation} onChange={(event) => setToLocation(event.target.value)} placeholder="Select destination" className={fieldClassName + ' pl-12'} />
+                    </div>
+                  </label>
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <label className="block">
+                      <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Date</span>
+                      <div className="relative">
+                        <Calendar className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                        <input type="date" value={travelDate} onChange={(event) => setTravelDate(event.target.value)} className={fieldClassName + ' pl-12'} />
+                      </div>
+                    </label>
+
+                    <label className="block">
+                      <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Passengers</span>
+                      <div className="flex h-[54px] items-center rounded-[20px] border border-slate-200 bg-white px-4 shadow-sm">
+                        <User className="h-5 w-5 text-slate-400" />
+                        <button type="button" onClick={() => setPassengers((current) => Math.max(1, current - 1))} className="ml-auto rounded-full bg-slate-100 px-3 py-1 text-lg font-black text-slate-600 transition hover:bg-slate-200">-</button>
+                        <span className="w-10 text-center text-sm font-black text-slate-900">{passengers}</span>
+                        <button type="button" onClick={() => setPassengers((current) => Math.min(10, current + 1))} className="rounded-full bg-slate-100 px-3 py-1 text-lg font-black text-slate-600 transition hover:bg-slate-200">+</button>
+                      </div>
+                    </label>
+                  </div>
+
+                  <button type="submit" disabled={searchLoading} className={primaryButtonClassName + ' w-full'}>
+                    {searchLoading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                    {searchLoading ? 'Searching...' : 'Search available buses'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        {(bookingError || bookingSuccess || ticketsError) && (
+          <div className="space-y-3">
+            {bookingError && (
+              <div className="flex items-start gap-3 rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{bookingError}</span>
+              </div>
+            )}
+            {bookingSuccess && (
+              <div className="flex items-start gap-3 rounded-[22px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                <CheckCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{bookingSuccess}</span>
+              </div>
+            )}
+            {ticketsError && (
+              <div className="flex items-start gap-3 rounded-[22px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{ticketsError}</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {renderSearchResults()}
+
+        <div className="grid gap-6 xl:grid-cols-[1.02fr_0.98fr]">
+          <div className={`${cardClassName} p-6`}>
+            <SectionHeader
+              eyebrow="Quick Actions"
+              title="Move through the platform faster"
+              description="Access booking management, live tracking, support, and history from one place."
+            />
+
+            <div className="mt-6 grid gap-4 sm:grid-cols-2">
+              <ShortcutCard icon={Ticket} title="My Bookings" description="Open your tickets and boarding QR codes." onClick={() => setActiveTab('bookings')} />
+              <ShortcutCard icon={Navigation} title="Track Bus" description="See live movement and estimated arrival time." onClick={() => setActiveTab('map')} />
+              <ShortcutCard icon={History} title="Trip History" description="Review completed and cancelled trips." onClick={() => setActiveTab('history')} />
+              <ShortcutCard icon={HelpCircle} title="Help Center" description="Support notifications and contact details." onClick={() => setActiveTab('help')} />
+            </div>
+          </div>
+
+          <div className={`${cardClassName} p-6`}>
+            <SectionHeader
+              eyebrow="Popular Routes"
+              title="Fast route shortcuts"
+              description="Tap a route to prefill your search and book faster."
+            />
+
+            <div className="mt-6 grid gap-3">
+              {popularRoutes.length === 0 ? (
+                <div className="rounded-[24px] border border-slate-200/80 bg-slate-50/80 p-5 text-sm text-slate-500">Popular schedules will appear here once route data is available.</div>
+              ) : (
+                popularRoutes.map((route) => (
+                  <button
+                    key={`${route.schedule_id}-${route.pickup_stop}-${route.dropoff_stop}`}
+                    onClick={() => {
+                      setFromLocation(route.pickup_stop);
+                      setToLocation(route.dropoff_stop);
+                    }}
+                    className="rounded-[24px] border border-slate-200/80 bg-slate-50/70 p-4 text-left transition hover:border-[#0077B6]/20 hover:bg-[#0077B6]/5"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <RouteLine from={route.pickup_stop} to={route.dropoff_stop} />
+                        <div className="mt-2 text-sm text-slate-500">{formatShortDate(route.departure_date)} · {formatTime(route.departure_time)}</div>
+                      </div>
+                      <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-slate-600 shadow-sm">{route.available_seats ?? 0} seats</span>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderContent = () => {
+    switch (activeTab) {
+      case 'shared':
+        return renderSharedTab();
+      case 'bookings':
+        return renderBookings();
+      case 'map':
+        return renderTracking();
+      case 'history':
+        return renderHistory();
+      case 'help':
+        return renderHelp();
+      case 'profile':
+        return <AccountSettings />;
+      default:
+        return renderSharedTab();
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            {/* Logo */}
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-[#0077B6] to-[#005F8E] rounded-xl flex items-center justify-center">
-                <Bus className="w-6 h-6 text-white" />
-              </div>
-              <span className="text-2xl font-bold bg-gradient-to-r from-[#0077B6] to-[#005F8E] bg-clip-text text-transparent">
-                SafariTix
-              </span>
+    <div className="min-h-screen bg-[linear-gradient(180deg,#f4f9ff_0%,#eef5fb_36%,#f8fbff_100%)] text-slate-900">
+      <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(0,119,182,0.1),transparent_26%),radial-gradient(circle_at_top_right,rgba(53,164,230,0.12),transparent_24%),radial-gradient(circle_at_bottom_left,rgba(3,27,52,0.08),transparent_28%)]" />
+      <datalist id="commuter-stop-options-from">
+        {stopOptions.filter((stop) => stop !== toLocation).map((stop) => <option key={`from-${stop}`} value={stop} />)}
+      </datalist>
+      <datalist id="commuter-stop-options-to">
+        {stopOptions.filter((stop) => stop !== fromLocation).map((stop) => <option key={`to-${stop}`} value={stop} />)}
+      </datalist>
+
+      <header className="sticky top-0 z-30 border-b border-white/70 bg-white/75 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-4 px-4 py-4 lg:px-6 xl:px-8">
+          <div className="flex min-w-0 items-center gap-3">
+            <button onClick={() => setMobileMenuOpen((current) => !current)} className="inline-flex rounded-2xl border border-slate-200 bg-white p-2 text-slate-700 shadow-sm lg:hidden">
+              {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </button>
+            <div className="rounded-[22px] bg-[linear-gradient(135deg,#031b34_0%,#0077B6_100%)] p-3 text-white shadow-[0_18px_36px_rgba(0,119,182,0.24)]">
+              <Bus className="h-5 w-5" />
             </div>
+            <div className="min-w-0">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-[#0077B6]">SafariTix</div>
+              <div className="truncate text-lg font-black text-slate-900">Commuter Dashboard</div>
+            </div>
+          </div>
 
-            {/* Desktop Navigation */}
-            <nav className="hidden md:flex items-center gap-2">
-              {[
-                { id: 'home', label: 'Home', icon: Home },
-                { id: 'tickets', label: 'My Tickets', icon: Ticket },
-                { id: 'map', label: 'Live Map', icon: MapPin },
-                { id: 'notifications', label: 'Notifications', icon: Bell },
-                { id: 'profile', label: 'Profile', icon: User },
-              ].map((item) => {
-                const Icon = item.icon as any;
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => setActiveTab(item.id)}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-xl font-semibold transition-all duration-300 ${
-                      activeTab === item.id
-                        ? 'bg-[#0077B6] text-white shadow-lg'
-                        : 'text-gray-600 hover:bg-gray-100'
-                    }`}
-                  >
-                    <Icon className="w-5 h-5" />
-                    <span>{item.label}</span>
-                    {item.id === 'notifications' && (
-                      <span className="w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center font-bold">
-                        {notifications.length}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </nav>
+          <div className="hidden items-center gap-2 rounded-full border border-white/70 bg-white/80 p-2 shadow-[0_14px_32px_rgba(15,23,42,0.06)] xl:flex">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setActiveTab(item.id)}
+                  className={`inline-flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-bold transition ${activeTab === item.id ? 'bg-[#0077B6] text-white shadow-[0_16px_30px_rgba(0,119,182,0.24)]' : 'text-slate-600 hover:bg-slate-100'}`}
+                >
+                  <Icon className="h-4 w-4" />
+                  {item.label}
+                </button>
+              );
+            })}
+          </div>
 
-            {/* Mobile Menu Button */}
-            <button
-              className="md:hidden w-10 h-10 flex items-center justify-center rounded-xl hover:bg-gray-100"
-              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            >
-              <Menu className="w-6 h-6 text-gray-600" />
+          <div className="flex items-center gap-2 sm:gap-3">
+            <button onClick={() => void refreshDashboard()} className="hidden items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 md:inline-flex">
+              <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+            <NotificationBell />
+            <div className="hidden items-center gap-3 rounded-full border border-slate-200 bg-white px-3 py-2 shadow-sm lg:flex">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#0077B6]/10 text-[#0077B6]">
+                <User className="h-5 w-5" />
+              </div>
+              <div>
+                <div className="text-sm font-black text-slate-900">{user?.name || 'Commuter'}</div>
+                <div className="max-w-[220px] truncate text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">{user?.email || 'Passenger account'}</div>
+              </div>
+            </div>
+            <button onClick={signOut} className="inline-flex items-center gap-2 rounded-full bg-rose-50 px-4 py-2.5 text-sm font-bold text-rose-700 transition hover:bg-rose-100">
+              <LogOut className="h-4 w-4" />
+              <span className="hidden sm:inline">Sign out</span>
             </button>
           </div>
         </div>
 
-        {/* Mobile Menu */}
-        {isMobileMenuOpen && (
-          <div className="md:hidden border-t border-gray-200 bg-white">
-            <div className="px-4 py-3 space-y-2">
-              {[
-                { id: 'home', label: 'Home', icon: Home },
-                { id: 'tickets', label: 'My Tickets', icon: Ticket },
-                { id: 'map', label: 'Live Map', icon: MapPin },
-                { id: 'notifications', label: 'Notifications', icon: Bell },
-                { id: 'profile', label: 'Profile', icon: User },
-              ].map((item) => {
-                const Icon = item.icon as any;
+        {mobileMenuOpen && (
+          <div className="border-t border-slate-200 bg-white/95 px-4 py-4 backdrop-blur lg:hidden">
+            <div className="grid gap-2">
+              {navItems.map((item) => {
+                const Icon = item.icon;
                 return (
                   <button
                     key={item.id}
                     onClick={() => {
                       setActiveTab(item.id);
-                      setIsMobileMenuOpen(false);
+                      setMobileMenuOpen(false);
                     }}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-semibold transition-all duration-300 ${
-                      activeTab === item.id
-                        ? 'bg-[#0077B6] text-white'
-                        : 'text-gray-600 hover:bg-gray-100'
-                    }`}
+                    className={`inline-flex items-center gap-3 rounded-[22px] px-4 py-3 text-left text-sm font-bold transition ${activeTab === item.id ? 'bg-[#0077B6] text-white' : 'bg-slate-50 text-slate-700'}`}
                   >
-                    <Icon className="w-5 h-5" />
-                    <span>{item.label}</span>
+                    <Icon className="h-4 w-4" />
+                    {item.label}
                   </button>
                 );
               })}
@@ -1492,272 +1219,219 @@ const hasMapboxToken = typeof MAPBOX_TOKEN === 'string' && MAPBOX_TOKEN.trim().l
         )}
       </header>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-24 md:pb-8">
-        {activeTab === 'home' && renderHome()}
-        {activeTab === 'tickets' && renderTickets()}
-        {activeTab === 'map' && renderLiveMap()}
-        {activeTab === 'profile' && renderProfile()}
-        {activeTab === 'notifications' && renderNotifications()}
-      </main>
+      <div className="mx-auto grid max-w-[1440px] gap-6 px-4 py-6 lg:grid-cols-[320px_minmax(0,1fr)] lg:px-6 xl:px-8">
+        <aside className="hidden lg:block">
+          <div className={`${cardClassName} sticky top-28 overflow-hidden p-5`}>
+            <div className="rounded-[28px] bg-[linear-gradient(145deg,#031b34_0%,#0077B6_58%,#6ec5f0_100%)] p-6 text-white shadow-[0_26px_60px_rgba(0,119,182,0.24)]">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-sky-50/90">Welcome back</div>
+              <div className="mt-3 text-3xl font-black leading-tight">{user?.name || 'Commuter'}</div>
+              <p className="mt-3 text-sm leading-6 text-sky-50/90">A single workspace for booking, boarding, and live transport visibility.</p>
+              <div className="mt-6 grid grid-cols-2 gap-3">
+                <SidebarMiniStat label="Active trips" value={String(trackableTickets.length)} />
+                <SidebarMiniStat label="Unread alerts" value={String(unreadNotifications.length)} />
+              </div>
+            </div>
 
-      {/* Mobile Bottom Navigation */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-3 safe-bottom z-50">
-        <div className="flex items-center justify-around">
-          {[
-            { id: 'home', icon: Home, label: 'Home' },
-            { id: 'tickets', icon: Ticket, label: 'Tickets' },
-            { id: 'map', icon: MapPin, label: 'Map' },
-            { id: 'notifications', icon: Bell, label: 'Alerts', badge: notifications.length },
-            { id: 'profile', icon: User, label: 'Profile' },
-          ].map((item) => {
-            const Icon = item.icon as any;
-            return (
-              <button
-                key={item.id}
-                onClick={() => setActiveTab(item.id)}
-                className={`flex flex-col items-center gap-1 px-3 py-2 rounded-xl transition-all duration-300 relative ${
-                  activeTab === item.id
-                    ? 'text-[#0077B6]'
-                    : 'text-gray-400'
-                }`}
-              >
-                <Icon className="w-6 h-6" />
-                <span className="text-xs font-semibold">{item.label}</span>
-                {item.badge && item.badge > 0 && (
-                  <span className="absolute top-0 right-0 w-4 h-4 bg-red-500 text-white rounded-full text-[10px] flex items-center justify-center font-bold">
-                    {item.badge}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </nav>
+            <div className="mt-5 space-y-3">
+              {metricCard('Active trips', String(trackableTickets.length), 'text-slate-900')}
+              {metricCard('Trip history', String(historyTickets.length), 'text-slate-900')}
+              {metricCard('Unread alerts', String(unreadNotifications.length), 'text-[#0077B6]')}
+            </div>
 
-      {/* Ticket Modal */}
-      {showTicketModal && selectedTicket && (
-        <div className="fixed inset-0 xl:flex xl:flex-col bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl xl:overflow-y-auto xl:flex-1 max-w-md w-full p-8 relative animate-scale-in">
-            <button
-              onClick={() => setShowTicketModal(false)}
-              className="absolute top-4 right-4 w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-all duration-300"
-            >
-              <X className="w-5 h-5 text-gray-600" />
-            </button>
-
-            {/* If selectedTicket already has a confirmed seat/qrCode (existing ticket), show ticket details. Otherwise show seat map for booking */}
-            {(selectedTicket.qrCode || selectedTicket.seat) ? (
-              <>
-                <div className="text-center mb-6">
-                  <h3 className="text-2xl font-bold text-gray-900 mb-2">Your Ticket</h3>
-                  <p className="text-gray-600">{selectedTicket.from} → {selectedTicket.to}</p>
-                </div>
-
-                <div className="bg-gradient-to-br from-[#0077B6]/10 to-[#005F8E]/10 rounded-2xl p-8 mb-6 border-2 border-dashed border-[#0077B6]/30">
-                  <div className="w-48 h-48 mx-auto bg-white rounded-xl flex items-center justify-center shadow-md">
-                    {selectedTicket.qrData ? (
-                      <QRCodeCanvas id="ticket-qr-canvas" value={selectedTicket.qrData} size={160} bgColor="#ffffff" fgColor="#0077B6" />
-                    ) : (
-                      <QrCode className="w-32 h-32 text-[#0077B6]" />
-                    )}
-                  </div>
-                  <div className="text-center mt-4">
-                    <p className="text-xs text-gray-500 mb-1">Booking Reference</p>
-                    <p className="text-sm font-bold text-gray-900 font-mono">{selectedTicket.bookingRef || 'N/A'}</p>
-                    <p className="text-xs text-gray-400 mt-2">Scan QR code for check-in</p>
-                  </div>
-                </div>
-
-                <div className="space-y-3 mb-6">
-                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
-                    <span className="text-gray-600">Status</span>
-                    <span className={`font-bold px-3 py-1 rounded-full text-xs ${
-                      selectedTicket.status === 'CONFIRMED' ? 'bg-green-100 text-green-700' :
-                      selectedTicket.status === 'CHECKED_IN' ? 'bg-blue-100 text-blue-700' :
-                      selectedTicket.status === 'CANCELLED' ? 'bg-red-100 text-red-700' :
-                      'bg-gray-100 text-gray-700'
-                    }`}>
-                      {selectedTicket.status === 'CHECKED_IN' ? 'Checked In' : 
-                       selectedTicket.status === 'CONFIRMED' ? 'Confirmed' :
-                       selectedTicket.status || 'Pending'}
+            <div className="mt-6 space-y-2">
+              {navItems.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => setActiveTab(item.id)}
+                    className={`flex w-full items-center justify-between rounded-[22px] px-4 py-3.5 text-left text-sm font-bold transition ${activeTab === item.id ? 'bg-[#0077B6] text-white shadow-[0_14px_30px_rgba(0,119,182,0.18)]' : 'bg-slate-50/85 text-slate-700 hover:bg-slate-100'}`}
+                  >
+                    <span className="inline-flex items-center gap-3">
+                      <Icon className="h-4 w-4" />
+                      {item.label}
                     </span>
-                  </div>
-                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
-                    <span className="text-gray-600">Date</span>
-                    <span className="font-bold text-gray-900">{new Date(selectedTicket.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-                  </div>
-                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
-                    <span className="text-gray-600">Time</span>
-                    <span className="font-bold text-gray-900">{selectedTicket.time}</span>
-                  </div>
-                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
-                    <span className="text-gray-600">Seat</span>
-                    <span className="font-bold text-gray-900">#{selectedTicket.seat}</span>
-                  </div>
-                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
-                    <span className="text-gray-600">Bus</span>
-                    <span className="font-bold text-gray-900">{selectedTicket.bus}</span>
-                  </div>
-                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
-                    <span className="text-gray-600">Price</span>
-                    <span className="font-bold text-gray-900">RWF {selectedTicket.price?.toLocaleString() || '0'}</span>
-                  </div>
-                </div>
-
-                <div className="mb-4">
-                  <div className="text-sm text-gray-600 mb-1">Passenger</div>
-                  <div className="font-semibold text-gray-900">{selectedTicket.passengerName || selectedTicket.name || user?.name || '—'}</div>
-                  <div className="text-sm text-gray-500">{selectedTicket.passengerEmail || selectedTicket.email || user?.email || ''}</div>
-                  <div className="text-sm text-gray-500">{selectedTicket.passengerPhone || selectedTicket.phone || user?.phone || user?.phoneNumber || ''}</div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <button onClick={() => downloadTicket(selectedTicket)} className="flex items-center justify-center gap-2 bg-[#0077B6] text-white px-4 py-3 rounded-xl font-semibold hover:bg-[#005F8E] transition-all duration-300">
-                    <Download className="w-5 h-5" />
-                    Download
+                    <ArrowRight className="h-4 w-4" />
                   </button>
-                  <button onClick={() => shareTicket(selectedTicket)} className="flex items-center justify-center gap-2 bg-gray-100 text-gray-900 px-4 py-3 rounded-xl font-semibold hover:bg-gray-200 transition-all duration-300">
-                    <Share2 className="w-5 h-5" />
-                    Share
-                  </button>
-                </div>
+                );
+              })}
+            </div>
 
-                {/* Cancel Button */}
-                <div className="mt-3">
-                  {(() => {
-                    const cancelCheck = canCancelTicket(selectedTicket);
-                    return (
-                      <button
-                        onClick={() => handleCancelTicket(selectedTicket)}
-                        disabled={!cancelCheck.canCancel || cancelling}
-                        className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-semibold transition-all duration-300 ${
-                          cancelCheck.canCancel && !cancelling
-                            ? 'bg-red-500 text-white hover:bg-red-600'
-                            : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                        }`}
-                        title={cancelCheck.reason || 'Cancel Ticket'}
-                      >
-                        {cancelling ? (
-                          <>
-                            <Loader2 className="w-5 h-5 animate-spin" />
-                            Cancelling...
-                          </>
-                        ) : (
-                          <>
-                            <Ban className="w-5 h-5" />
-                            Cancel Ticket
-                          </>
-                        )}
-                      </button>
-                    );
-                  })()}
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="text-center mb-4">
-                  <h3 className="text-2xl font-bold text-gray-900 mb-1">Select Seat</h3>
-                  <p className="text-sm text-gray-600">{selectedTicket.from} → {selectedTicket.to}</p>
-                </div>
+            <div className="mt-6 rounded-[24px] border border-slate-200/80 bg-slate-50/80 p-4">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">Member profile</div>
+              <div className="mt-3 text-sm font-black text-slate-900">{user?.email || 'Passenger account'}</div>
+              <button onClick={() => setActiveTab('profile')} className="mt-4 inline-flex items-center gap-2 text-sm font-bold text-[#0077B6] transition hover:text-[#005F8E]">
+                Open profile
+                <ArrowRight className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </aside>
 
-                <div className="mb-3">
-                  <div className="flex items-center gap-3 justify-center flex-wrap">
-                    <div className="flex items-center gap-2">
-                      <div className="w-5 h-5 rounded bg-white border border-gray-300"></div>
-                      <div className="text-sm text-gray-600">Available</div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-5 h-5 rounded bg-[#0077B6]"></div>
-                      <div className="text-sm text-gray-600">Selected</div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-5 h-5 rounded bg-gray-300"></div>
-                      <div className="text-sm text-gray-600">Occupied</div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-5 h-5 rounded bg-yellow-100 border border-yellow-300"></div>
-                      <div className="text-sm text-gray-600">Locked</div>
-                    </div>
-                  </div>
-                </div>
+        <main className="min-w-0">{renderContent()}</main>
+      </div>
 
-                <div className="mb-4">
-                  <SeatMap scheduleId={selectedTicket.id} price={selectedTicket.price || 0} selectedSeatsMap={selectedSeatsMap} setSelectedSeatsMap={setSelectedSeatsMap} accessToken={accessToken} />
+      {viewTicket && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4" onClick={() => setViewTicket(null)}>
+          <div className="w-full max-w-md overflow-hidden rounded-[32px] bg-white shadow-[0_30px_80px_rgba(15,23,42,0.35)]" onClick={(event) => event.stopPropagation()}>
+            <div className="bg-[linear-gradient(135deg,#031b34_0%,#0077B6_58%,#6ec5f0_100%)] px-6 pb-8 pt-6 text-white">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-sky-100">Boarding pass</div>
+                  <div className="mt-4"><RouteLine from={viewTicket.fromStop} to={viewTicket.toStop} prominent={true} light={true} /></div>
+                  <p className="mt-3 text-sm text-sky-100">{formatDate(viewTicket.scheduleDate)} · {formatTime(viewTicket.departureTime)}</p>
                 </div>
+                <button onClick={() => setViewTicket(null)} className="rounded-full bg-white/15 p-2 transition hover:bg-white/25">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
 
-                <div className="mb-4">
-                  <div className="text-sm text-gray-600 mb-2">Selected seat(s): <span className="font-semibold text-gray-900">{Object.keys(selectedSeatsMap).filter(k=>selectedSeatsMap[k]).join(', ') || 'None'}</span></div>
-                  <div className="flex gap-3">
-                    <button
-                      onClick={async () => {
-                        const picks = Object.keys(selectedSeatsMap).filter(k=>selectedSeatsMap[k]);
-                        if (picks.length === 0) {
-                          setLockError('Select at least one seat');
-                          return;
-                        }
-                        setLockError(null);
-                        setLocking(true);
-                        try {
-                          const hdrs: Record<string,string> = { 'Content-Type': 'application/json' };
-                          if (accessToken) hdrs['Authorization'] = `Bearer ${accessToken}`;
-                          // lock each seat sequentially
-                          const results = [];
-                          for (const seatNum of picks) {
-                            const body = { seat_number: seatNum, passenger_id: user?.id, price: selectedTicket.price || 0 };
-                            const res = await fetch(`/api/seats/schedules/${selectedTicket.id}/lock`, { method: 'POST', headers: hdrs, body: JSON.stringify(body) });
-                            if (!res.ok) {
-                              const txt = await res.text();
-                              throw new Error(txt || 'Failed to lock seat');
-                            }
-                            const json = await res.json();
-                            results.push(json);
-                          }
-                          // success - close modal and refresh available seats / show confirmation
-                          setShowTicketModal(false);
-                          // optional: refresh lists
-                        } catch (err: any) {
-                          console.error('Lock error', err);
-                          setLockError(err.message || 'Failed to lock seats');
-                        } finally {
-                          setLocking(false);
-                        }
-                      }}
-                      className="bg-[#0077B6] text-white px-4 py-2 rounded-xl font-semibold hover:bg-[#005F8E] transition-all duration-200"
-                      disabled={locking}
-                    >
-                      {locking ? 'Booking…' : 'Confirm Booking'}
-                    </button>
-                    <button onClick={() => { setSelectedSeatsMap({}); setShowTicketModal(false); }} className="bg-gray-100 text-gray-900 px-4 py-2 rounded-xl font-semibold hover:bg-gray-200 transition-all duration-200">
-                      Cancel
-                    </button>
-                  </div>
-                  {lockError && <div className="text-sm text-red-600 mt-2">{lockError}</div>}
+            <div className="space-y-5 px-6 py-6">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <TicketFact label="Passenger" value={user?.name || 'Commuter'} />
+                <TicketFact label="Seat" value={viewTicket.seatNumber} />
+                <TicketFact label="Bus" value={viewTicket.busPlate} />
+                <TicketFact label="Reference" value={viewTicket.bookingRef} mono={true} />
+              </div>
+
+              <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5 text-center">
+                <div className="mx-auto inline-flex rounded-3xl bg-white p-4 shadow-sm">
+                  <QRCodeSVG value={viewTicket.bookingRef || viewTicket.id} size={200} level="H" includeMargin={true} />
                 </div>
-              </>
-            )}
+                <p className="mt-4 text-sm font-semibold text-slate-500">Show this QR code to the driver when boarding.</p>
+              </div>
+            </div>
           </div>
         </div>
       )}
+    </div>
+  );
+}
 
-      <style>{`
-        @keyframes scale-in {
-          from {
-            opacity: 0;
-            transform: scale(0.9);
-          }
-          to {
-            opacity: 1;
-            transform: scale(1);
-          }
-        }
-        .animate-scale-in {
-          animation: scale-in 0.3s ease-out;
-        }
-        .safe-bottom {
-          padding-bottom: env(safe-area-inset-bottom);
-        }
-      `}</style>
+function TicketFact({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="rounded-[22px] border border-slate-200/80 bg-slate-50/80 p-4">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">{label}</div>
+      <div className={`mt-2 text-sm font-black text-slate-900 ${mono ? 'font-mono' : ''}`}>{value}</div>
+    </div>
+  );
+}
+
+function QrPreview({ value }: { value: string }) {
+  return (
+    <div className="rounded-[18px] bg-white p-2 shadow-[0_12px_24px_rgba(15,23,42,0.08)]">
+      <QRCodeSVG value={value} size={48} level="H" includeMargin={false} />
+    </div>
+  );
+}
+
+function SectionHeader({
+  eyebrow,
+  title,
+  description,
+}: {
+  eyebrow: string;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div>
+      <div className="text-[11px] font-semibold uppercase tracking-[0.28em] text-[#0077B6]">{eyebrow}</div>
+      <h2 className="mt-2 text-2xl font-black text-slate-950 lg:text-[30px] lg:leading-[1.1]">{title}</h2>
+      <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">{description}</p>
+    </div>
+  );
+}
+
+function RouteLine({
+  from,
+  to,
+  prominent = false,
+  light = false,
+}: {
+  from: string;
+  to: string;
+  prominent?: boolean;
+  light?: boolean;
+}) {
+  const textClassName = light ? 'text-white' : 'text-slate-950';
+  const subClassName = light ? 'text-sky-100/90' : 'text-slate-400';
+
+  return (
+    <div className={`flex items-center gap-3 ${prominent ? 'text-xl sm:text-2xl' : 'text-base sm:text-lg'}`}>
+      <span className={`font-black ${textClassName}`}>{from}</span>
+      <span className={`inline-flex items-center gap-2 ${subClassName}`}>
+        <span className={`h-2.5 w-2.5 rounded-full ${light ? 'bg-white/75' : 'bg-[#0077B6]'}`} />
+        <ArrowRight className="h-4 w-4" />
+        <span className={`h-2.5 w-2.5 rounded-full ${light ? 'bg-white/75' : 'bg-slate-300'}`} />
+      </span>
+      <span className={`font-black ${textClassName}`}>{to}</span>
+    </div>
+  );
+}
+
+function EmptyPanel({
+  icon: Icon,
+  title,
+  description,
+  spinning = false,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  description: string;
+  spinning?: boolean;
+}) {
+  return (
+    <div className={`${cardClassName} p-10 text-center`}>
+      <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[#0077B6]/10 text-[#0077B6]">
+        <Icon className={`h-7 w-7 ${spinning ? 'animate-spin' : ''}`} />
+      </div>
+      <h3 className="mt-5 text-2xl font-black text-slate-900">{title}</h3>
+      <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-slate-500">{description}</p>
+    </div>
+  );
+}
+
+function ShortcutCard({
+  icon: Icon,
+  title,
+  description,
+  onClick,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  description: string;
+  onClick: () => void;
+}) {
+  return (
+    <button onClick={onClick} className="rounded-[24px] border border-slate-200/80 bg-slate-50/70 p-5 text-left transition hover:border-[#0077B6]/20 hover:bg-[#0077B6]/5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex h-11 w-11 items-center justify-center rounded-[16px] bg-white text-[#0077B6] shadow-sm">
+          <Icon className="h-5 w-5" />
+        </div>
+        <ArrowRight className="h-4 w-4 text-slate-400" />
+      </div>
+      <div className="mt-4 text-lg font-black text-slate-900">{title}</div>
+      <p className="mt-2 text-sm leading-6 text-slate-500">{description}</p>
+    </button>
+  );
+}
+
+function ContactCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-[22px] border border-slate-200/80 bg-slate-50/70 p-4">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">{label}</div>
+      <div className="mt-2 text-sm font-black text-slate-900">{value}</div>
+    </div>
+  );
+}
+
+function SidebarMiniStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-[20px] bg-white/12 px-4 py-3 backdrop-blur-sm">
+      <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-sky-50/80">{label}</div>
+      <div className="mt-2 text-2xl font-black text-white">{value}</div>
     </div>
   );
 }

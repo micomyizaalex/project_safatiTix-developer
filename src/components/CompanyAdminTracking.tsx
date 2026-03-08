@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import { io, Socket } from 'socket.io-client';
 import L from 'leaflet';
 import { MapPin, Loader2, AlertCircle, CheckCircle, XCircle, Bus, Building2 } from 'lucide-react';
@@ -52,6 +52,20 @@ interface LocationData {
   timestamp: string;
 }
 
+const mergeLocationHistory = (history: LocationData[], incoming: LocationData) => {
+  const lastPoint = history[history.length - 1];
+  if (
+    lastPoint &&
+    lastPoint.timestamp === incoming.timestamp &&
+    lastPoint.latitude === incoming.latitude &&
+    lastPoint.longitude === incoming.longitude
+  ) {
+    return history;
+  }
+
+  return [...history, incoming];
+};
+
 type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 
 // Component to auto-center map on location updates
@@ -77,6 +91,7 @@ const CompanyAdminTracking: React.FC<CompanyAdminTrackingProps> = ({
 }) => {
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
   const [currentLocation, setCurrentLocation] = useState<LocationData | null>(null);
+  const [locationHistory, setLocationHistory] = useState<LocationData[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -89,7 +104,7 @@ const CompanyAdminTracking: React.FC<CompanyAdminTrackingProps> = ({
         setLoading(true);
         setConnectionStatus('connecting');
         
-        const accessToken = localStorage.getItem('token');
+        const accessToken = localStorage.getItem('accessToken') || localStorage.getItem('token');
         if (!accessToken) {
           throw new Error('Authentication required');
         }
@@ -109,14 +124,26 @@ const CompanyAdminTracking: React.FC<CompanyAdminTrackingProps> = ({
 
         const data = await response.json();
         
-        if (data.hasLocation && data.location) {
-          setCurrentLocation({
+        if (Array.isArray(data.history) && data.history.length > 0) {
+          const history = data.history.map((point: LocationData) => ({
+            latitude: point.latitude,
+            longitude: point.longitude,
+            speed: point.speed,
+            heading: point.heading,
+            timestamp: String(point.timestamp),
+          }));
+          setLocationHistory(history);
+          setCurrentLocation(history[history.length - 1] || null);
+        } else if (data.hasLocation && data.location) {
+          const latestLocation = {
             latitude: data.location.latitude,
             longitude: data.location.longitude,
             speed: data.location.speed,
             heading: data.location.heading,
-            timestamp: data.location.timestamp
-          });
+            timestamp: String(data.location.timestamp)
+          };
+          setLocationHistory([latestLocation]);
+          setCurrentLocation(latestLocation);
         }
 
         // Initialize Socket.IO connection
@@ -141,24 +168,28 @@ const CompanyAdminTracking: React.FC<CompanyAdminTrackingProps> = ({
 
         socket.on('bus:currentLocation', (data) => {
           console.log('📍 Received current location:', data);
-          setCurrentLocation({
+          const latestLocation = {
             latitude: data.latitude,
             longitude: data.longitude,
             speed: data.speed,
             heading: data.heading,
-            timestamp: data.timestamp
-          });
+            timestamp: String(data.timestamp)
+          };
+          setCurrentLocation(latestLocation);
+          setLocationHistory((prev) => mergeLocationHistory(prev, latestLocation));
         });
 
         socket.on('bus:locationUpdate', (data) => {
           console.log('📍 Live location update:', data);
-          setCurrentLocation({
+          const latestLocation = {
             latitude: data.latitude,
             longitude: data.longitude,
             speed: data.speed,
             heading: data.heading,
-            timestamp: data.timestamp
-          });
+            timestamp: String(data.timestamp)
+          };
+          setCurrentLocation(latestLocation);
+          setLocationHistory((prev) => mergeLocationHistory(prev, latestLocation));
         });
 
         socket.on('error', (data) => {
@@ -170,13 +201,12 @@ const CompanyAdminTracking: React.FC<CompanyAdminTrackingProps> = ({
 
         socket.on('disconnect', () => {
           console.log('🔌 Disconnected from tracking server');
-          setConnectionStatus('disconnected');
+          setConnectionStatus('connecting');
         });
 
         socket.on('connect_error', (err) => {
           console.error('❌ Connection error:', err);
-          setConnectionStatus('error');
-          setError('Failed to connect to tracking server');
+          setConnectionStatus('connecting');
         });
 
       } catch (err) {
@@ -226,6 +256,7 @@ const CompanyAdminTracking: React.FC<CompanyAdminTrackingProps> = ({
   const mapCenter: [number, number] = currentLocation 
     ? [currentLocation.latitude, currentLocation.longitude]
     : [-1.9441, 30.0619]; // Default to Kigali, Rwanda
+  const polylinePositions = locationHistory.map((point) => [point.latitude, point.longitude] as [number, number]);
 
   return (
     <div className="space-y-4">
@@ -320,6 +351,10 @@ const CompanyAdminTracking: React.FC<CompanyAdminTrackingProps> = ({
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
           
+          {polylinePositions.length > 1 && (
+            <Polyline positions={polylinePositions} pathOptions={{ color: '#27AE60', weight: 4, opacity: 0.8 }} />
+          )}
+
           {currentLocation && (
             <Marker 
               position={[currentLocation.latitude, currentLocation.longitude]}

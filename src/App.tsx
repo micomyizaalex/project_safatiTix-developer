@@ -1,7 +1,7 @@
 import React from 'react';
 import { ThemeProvider } from './components/ThemeContext';
 import { AuthProvider } from './components/AuthContext';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import CommuterDashboard from './pages/commuter/commuterDashboard';
 import HomePage from './pages/HomePage';
 import { LandingPage } from './pages/public/LandingPage';
@@ -13,6 +13,7 @@ import SignupPage from './pages/SignupPage';
 import ScheduleDetails from './pages/ScheduleDetails';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import DriverDashboard from './pages/driver/DriverDashboard';
+import DriverScannerPage from './pages/driver/DriverScannerPage';
 import PublicLayout from './layouts/PublicLayout';
 import AdminLayout from './layouts/AdminLayout';
 import CompanyLayout from './layouts/CompanyLayout';
@@ -33,6 +34,12 @@ import DriverTracking from './pages/company/DriverTracking';
 import FirstLoginChange from './pages/FirstLoginChange';
 import AccountSettings from './pages/account/AccountSettings';
 import PaymentPage from './pages/commuter/PaymentPage';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
+import VerifyEmail from './pages/VerifyEmail';
+import ProfilePage from './pages/user/ProfilePage';
+import CompanyVerificationsPage from './pages/admin/CompanyVerificationsPage';
+import SubscriptionRequestsPage from './pages/admin/SubscriptionRequestsPage';
 
 const App = () => {
   return (
@@ -56,10 +63,13 @@ const App = () => {
             <Route path='/dashboard' element={<Layout />}>
               <Route path='admin' element={<RequireRole allowed={["admin"]}><AdminLayout/></RequireRole>}>
                 <Route index element={<AdminDashboard/>} />
+                <Route path='company-verifications' element={<CompanyVerificationsPage/>} />
+                <Route path='subscription-requests' element={<SubscriptionRequestsPage/>} />
               </Route>
 
               <Route path='company' element={<RequireRole allowed={["company_admin"]}><CompanyLayout/></RequireRole>}>
                 <Route index element={<CompanyDashboard/>} />
+                <Route path='subscription' element={<CompanyDashboard/>} />
               </Route>
 
               <Route path='commuter' element={<RequireRole allowed={["commuter"]}><CommuterLayout/></RequireRole>}>
@@ -72,12 +82,19 @@ const App = () => {
 
               <Route path='driver' element={<RequireRole allowed={["driver"]}><DriverLayout/></RequireRole>}>
                 <Route index element={<DriverDashboard/>} />
+                <Route path='my-trips' element={<DriverDashboard/>} />
+                <Route path='scanner' element={<DriverScannerPage/>} />
               </Route>
 
               <Route path='*' element={<NotFound />} />
             </Route>
 
             <Route path='/first-login-change' element={<FirstLoginChange/>} />
+            <Route path='/forgot-password' element={<ForgotPassword/>} />
+            <Route path='/reset-password' element={<ResetPassword/>} />
+            <Route path='/verify-email' element={<VerifyEmail/>} />
+            <Route path='/profile' element={<RequireRole allowed={["commuter","company_admin","driver","admin"]}><ProfilePage/></RequireRole>} />
+            <Route path='/admin/company-verifications' element={<Navigate to='/dashboard/admin/company-verifications' replace />} />
 
             {/* Alias dashboard routes */}
             <Route path='/driver/dashboard' element={<Layout />}>
@@ -86,6 +103,7 @@ const App = () => {
             </Route>
             <Route path='/company/dashboard' element={<Layout />}>
               <Route index element={<RequireRole allowed={["company_admin","company"]}><CompanyDashboard/></RequireRole>} />
+              <Route path='subscription' element={<RequireRole allowed={["company_admin","company"]}><CompanyDashboard/></RequireRole>} />
             </Route>
             {/* Tailwind test route */}
             <Route path='/tailwind-test' element={<Layout />}>

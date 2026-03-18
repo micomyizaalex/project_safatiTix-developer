@@ -1,4 +1,4 @@
-import React, { useState, useEffect, CSSProperties } from 'react';
+import React, { useState, useEffect, useRef, CSSProperties } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../components/AuthContext';
 import { API_URL } from '../../utils/supabase-client';
@@ -29,6 +29,9 @@ interface LocationState {
   selectedSeats: string[];
   scheduleId: string | number;
   price: number;
+  tripId?: string | number;
+  fromStop?: string;
+  toStop?: string;
   scheduleDetails?: {
     routeFrom: string;
     routeTo: string;
@@ -50,6 +53,8 @@ export default function PaymentPage() {
   const scheduleId = state?.scheduleId;
   const pricePerSeat = state?.price || 0;
   const scheduleDetails = state?.scheduleDetails;
+  const fromStop = state?.fromStop;
+  const toStop = state?.toStop;
   
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('mobile_money');
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -60,6 +65,18 @@ export default function PaymentPage() {
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [activeBookingId, setActiveBookingId] = useState<string | null>(null);
+  const [bookingExpiresAt, setBookingExpiresAt] = useState<string | null>(null);
+
+  const isMountedRef = useRef(true);
+  const pollingTimeoutRef = useRef<number | null>(null);
+  const activeBookingRef = useRef<string | null>(null);
+  const paymentCompletedRef = useRef(false);
+  const pollStartTimeRef = useRef<number>(0);
+
+  // Maximum time (ms) to poll before giving up waiting for the phone confirmation
+  const POLL_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
   const totalAmount = selectedSeats.length * pricePerSeat;
 
@@ -70,68 +87,237 @@ export default function PaymentPage() {
     }
   }, [scheduleId, selectedSeats, navigate]);
 
+  useEffect(() => {
+    activeBookingRef.current = activeBookingId;
+  }, [activeBookingId]);
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+      if (pollingTimeoutRef.current) {
+        window.clearTimeout(pollingTimeoutRef.current);
+      }
+
+      if (activeBookingRef.current && !paymentCompletedRef.current) {
+        const hdrs: Record<string, string> = {};
+        if (accessToken) hdrs.Authorization = `Bearer ${accessToken}`;
+
+        fetch(`${API_URL}/payments/${activeBookingRef.current}/cancel`, {
+          method: 'POST',
+          headers: hdrs,
+        }).catch(() => undefined);
+      }
+    };
+  }, [accessToken]);
+
+  const clearPolling = () => {
+    if (pollingTimeoutRef.current) {
+      window.clearTimeout(pollingTimeoutRef.current);
+      pollingTimeoutRef.current = null;
+    }
+  };
+
+  const getHeaders = () => {
+    const hdrs: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (accessToken) hdrs.Authorization = `Bearer ${accessToken}`;
+    return hdrs;
+  };
+
+  const cancelBookingHold = async (bookingId: string) => {
+    try {
+      const hdrs: Record<string, string> = {};
+      if (accessToken) hdrs.Authorization = `Bearer ${accessToken}`;
+
+      await fetch(`${API_URL}/payments/${bookingId}/cancel`, {
+        method: 'POST',
+        headers: hdrs,
+      });
+    } catch {
+      // Best-effort cleanup only.
+    }
+  };
+
+  const finishSuccess = (message?: string) => {
+    paymentCompletedRef.current = true;
+    clearPolling();
+    setProcessing(false);
+    setError(null);
+    setStatusMessage(message || 'Payment confirmed. Your ticket is being prepared.');
+    setSuccess(true);
+    activeBookingRef.current = null;
+    setActiveBookingId(null);
+    setBookingExpiresAt(null);
+
+    window.setTimeout(() => {
+      navigate('/dashboard/commuter', { state: { tab: 'tickets' } });
+    }, 1800);
+  };
+
+  const pollPaymentStatus = async (bookingId: string) => {
+    // Guard: stop polling if the component unmounted or payment already finished
+    if (!isMountedRef.current || paymentCompletedRef.current) return;
+
+    // Hard cap: if we've been polling for longer than POLL_TIMEOUT_MS, abort
+    if (Date.now() - pollStartTimeRef.current > POLL_TIMEOUT_MS) {
+      clearPolling();
+      setProcessing(false);
+      setStatusMessage(null);
+      setError(
+        'Payment confirmation timed out. If you approved the payment on your phone, ' +
+        'please check My Tickets — your booking may have been confirmed.'
+      );
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_URL}/payments/${bookingId}/status`, {
+        headers: getHeaders(),
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data?.message || data?.error || 'Failed to check payment status');
+      }
+
+      const payment = data?.payment;
+      if (!payment) {
+        throw new Error('Payment status response is incomplete');
+      }
+
+      // Only treat as success when booking is fully confirmed (tickets created)
+      if (payment.booking_status === 'paid') {
+        finishSuccess('Payment confirmed! Your ticket is now available.');
+        return;
+      }
+
+      if (payment.booking_status === 'cancelled' || payment.status === 'failed') {
+        clearPolling();
+        setProcessing(false);
+        setSuccess(false);
+        activeBookingRef.current = null;
+        setActiveBookingId(null);
+        setBookingExpiresAt(null);
+        setStatusMessage(null);
+        setError('Payment failed or expired. Your seat hold was released.');
+        return;
+      }
+
+      if (!isMountedRef.current) return;
+
+      setStatusMessage('Waiting for payment confirmation on your phone...');
+      // Poll every 4 seconds while payment is pending
+      pollingTimeoutRef.current = window.setTimeout(() => {
+        void pollPaymentStatus(bookingId);
+      }, 4000);
+    } catch (err: any) {
+      if (!isMountedRef.current) return;
+
+      clearPolling();
+      setProcessing(false);
+      setStatusMessage(null);
+      setError(err.message || 'Unable to confirm payment status.');
+    }
+  };
+
   const handlePayment = async (e: React.FormEvent) => {
     e.preventDefault();
     setProcessing(true);
     setError(null);
+    setSuccess(false);
+    setStatusMessage(null);
+
+    let createdBookingId: string | null = null;
 
     try {
-      // Book all selected seats
-      const results: any[] = [];
-      const errors: string[] = [];
-      
-      const hdrs: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (accessToken) hdrs['Authorization'] = `Bearer ${accessToken}`;
+      if (activeBookingRef.current && !paymentCompletedRef.current) {
+        await cancelBookingHold(activeBookingRef.current);
+        activeBookingRef.current = null;
+        setActiveBookingId(null);
+        setBookingExpiresAt(null);
+      }
 
-      for (const seatNum of selectedSeats) {
-        const body = { seat_number: seatNum, price: pricePerSeat };
-        try {
-          const res = await fetch(`${API_URL}/seats/schedules/${scheduleId}/book`, {
-            method: 'POST',
-            headers: hdrs,
-            body: JSON.stringify(body)
-          });
+      const holdResponse = await fetch(`${API_URL}/payments/booking-hold`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({
+          scheduleId,
+          selectedSeats,
+          paymentMethod,
+          amount: totalAmount,
+          pricePerSeat,
+          fromStop,
+          toStop,
+        }),
+      });
 
-          if (!res.ok) {
-            const status = res.status;
-            const txt = await res.text().catch(() => null);
-            const textLower = String(txt || '').toLowerCase();
-            const simulate = status === 402 || status >= 500 || textLower.includes('payment') || textLower.includes('no payment');
-            
-            if (simulate) {
-              // create a synthetic ticket for dev/local flows
-              const fake = { ticket: { id: `dev-${scheduleId}-${seatNum}-${Date.now()}`, seat: seatNum, simulated: true } };
-              results.push({ seat: seatNum, ticket: fake.ticket });
-              continue;
-            }
-            errors.push(`Seat ${seatNum}: ${txt || res.statusText}`);
-            continue;
-          }
-          
-          const json = await res.json();
-          results.push({ seat: seatNum, ticket: json.ticket });
-        } catch (err: any) {
-          errors.push(`Seat ${seatNum}: ${err.message || 'Failed'}`);
+      const holdData = await holdResponse.json().catch(() => ({}));
+      if (!holdResponse.ok) {
+        throw new Error(holdData?.message || holdData?.error || 'Failed to reserve the selected seats');
+      }
+
+      const booking = holdData?.booking;
+      if (!booking?.booking_id) {
+        throw new Error('Seat hold was created without a booking reference');
+      }
+
+      createdBookingId = booking.booking_id;
+      activeBookingRef.current = createdBookingId;
+      setActiveBookingId(createdBookingId);
+      setBookingExpiresAt(booking.expires_at || null);
+      setStatusMessage('Seats reserved. Sending payment request to your phone...');
+
+      const payerReference = paymentMethod === 'card_payment' ? cardNumber.trim() : phoneNumber.trim();
+      const initiateResponse = await fetch(`${API_URL}/payments/initiate`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({
+          booking_id: createdBookingId,
+          phone_number: payerReference,
+          phoneOrCard: payerReference,
+          payment_method: paymentMethod,
+          amount: totalAmount,
+        }),
+      });
+
+      const initiateData = await initiateResponse.json().catch(() => ({}));
+      if (!initiateResponse.ok) {
+        if (createdBookingId) {
+          await cancelBookingHold(createdBookingId);
+          activeBookingRef.current = null;
+          setActiveBookingId(null);
+          setBookingExpiresAt(null);
         }
+        throw new Error(initiateData?.message || initiateData?.error || 'Failed to initiate payment');
       }
 
-      if (errors.length > 0) {
-        setError(errors.join('; '));
+      const initiatedPayment = initiateData?.payment;
+
+      // If the provider confirmed synchronously (e.g. after a status poll that
+      // already called finalizeSuccessfulPayment), finish immediately.
+      // Otherwise enter the polling loop and wait for the user to approve on phone.
+      if (initiatedPayment?.booking_status === 'paid') {
+        finishSuccess('Payment confirmed! Your ticket is ready.');
+        return;
       }
 
-      if (results.length > 0) {
-        setSuccess(true);
-        // Redirect to tickets page after a short delay
-        setTimeout(() => {
-          navigate('/dashboard/commuter', { state: { tab: 'tickets' } });
-        }, 2000);
-      } else if (errors.length > 0) {
-        throw new Error('All bookings failed');
-      }
+      setStatusMessage('Waiting for payment confirmation on your phone...');
+      pollStartTimeRef.current = Date.now();
+      // createdBookingId is guaranteed non-null here — we throw earlier if absent
+      await pollPaymentStatus(createdBookingId!);
     } catch (err: any) {
+      if (createdBookingId && !paymentCompletedRef.current) {
+        await cancelBookingHold(createdBookingId);
+        activeBookingRef.current = null;
+        setActiveBookingId(null);
+        setBookingExpiresAt(null);
+      }
+      clearPolling();
       setError(err.message || 'Booking failed. Please try again.');
+      setStatusMessage(null);
     } finally {
-      setProcessing(false);
+      if (!paymentCompletedRef.current && !activeBookingRef.current) {
+        setProcessing(false);
+      }
     }
   };
 
@@ -367,6 +553,19 @@ export default function PaymentPage() {
       fontSize: '14px',
       fontWeight: '600',
     },
+    statusAlert: {
+      background: '#E6F4FB',
+      border: `1px solid ${SAFARITIX.primary}`,
+      color: SAFARITIX.primaryDark,
+      padding: '14px 16px',
+      borderRadius: '12px',
+      marginBottom: '20px',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '10px',
+      fontSize: '14px',
+      fontWeight: '600',
+    },
     seatsDisplay: {
       display: 'flex',
       flexWrap: 'wrap' as const,
@@ -470,6 +669,13 @@ export default function PaymentPage() {
               </div>
             )}
 
+            {statusMessage && !success && (
+              <div style={styles.statusAlert}>
+                <Loader2 size={18} className={processing ? 'animate-spin' : ''} />
+                <span>{statusMessage}</span>
+              </div>
+            )}
+
             <form onSubmit={handlePayment}>
               <div style={styles.methodGrid}>
                 {/* MTN Mobile Money */}
@@ -551,6 +757,14 @@ export default function PaymentPage() {
                       e.currentTarget.style.borderColor = '#e5e7eb';
                     }}
                   />
+                </div>
+              )}
+
+              {bookingExpiresAt && !success && (
+                <div style={{ ...styles.formGroup, marginBottom: '8px' }}>
+                  <div style={{ fontSize: '13px', color: '#6b7280' }}>
+                    Seat hold expires at {new Date(bookingExpiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </div>
                 </div>
               )}
 
@@ -648,7 +862,7 @@ export default function PaymentPage() {
                 {processing ? (
                   <>
                     <Loader2 size={20} className="animate-spin" />
-                    Processing...
+                    {statusMessage || 'Processing...'}
                   </>
                 ) : success ? (
                   <>
@@ -720,11 +934,11 @@ export default function PaymentPage() {
                 </span>
               </div>
               <div style={{ fontSize: '13px', color: '#6b7280' }}>
-                {user?.name || user?.full_name || 'Guest'}
+                {user?.name || 'Guest'}
                 <br />
                 {user?.email}
                 <br />
-                {user?.phone || user?.phoneNumber || user?.phone_number}
+                {user?.phone}
               </div>
             </div>
           </div>

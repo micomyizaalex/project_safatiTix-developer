@@ -50,67 +50,26 @@ export default function ScheduleDetails() {
   };
 
   const handlePay = async () => {
-    if (!lockInfo || !lockInfo.ticket_id) {
-      alert('No locked ticket to pay for');
+    if (!selectedSeat) {
+      setError('Select a seat before continuing to payment');
       return;
     }
-    setLoading(true);
-    setError(null);
 
-    try {
-      const init = await fetch(`${API_URL}/payments/initiate`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json'
+    navigate('/dashboard/commuter/payment', {
+      state: {
+        selectedSeats: [String(selectedSeat.seat_number || selectedSeat.seatNumber || selectedSeat.number || selectedSeat)],
+        scheduleId: schedule.id,
+        price: Number(schedule.price_per_seat || schedule.price || 0),
+        scheduleDetails: {
+          routeFrom: schedule.route?.origin || schedule.origin || 'Origin',
+          routeTo: schedule.route?.destination || schedule.destination || 'Destination',
+          departureTime: schedule.departure_time,
+          scheduleDate: schedule.schedule_date,
+          busPlateNumber: schedule.bus?.plate_number || schedule.bus_plate || 'TBA',
+          companyName: schedule.company?.company_name || schedule.company_name || 'SafariTix',
         },
-        body: JSON.stringify({
-          scheduleId: schedule.id,
-          paymentMethod: 'mobile_money',
-          phoneOrCard: user?.phone_number || '0000000000',
-          numTickets: 1
-        })
-      });
-
-      if (!init.ok) {
-        const errorData = await init.json().catch(() => ({}));
-        throw new Error(errorData.message || 'Payment initiation failed');
-      }
-      const initBody = await init.json();
-
-      const confirm = await fetch(`${API_URL}/payments/confirm`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ paymentId: initBody.payment.id })
-      });
-
-      if (!confirm.ok) {
-        throw new Error('Payment confirmation failed');
-      }
-
-      const res = await fetch(`${API_URL}/seats/locks/${lockInfo.lock_id}/confirm`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!res.ok) {
-        throw new Error('Failed to confirm seat lock');
-      }
-
-      alert('Payment successful! Your ticket has been confirmed.');
-      navigate('/dashboard/commuter');
-    } catch (e: any) {
-      console.error(e);
-      setError(e.message || 'Payment failed');
-    } finally {
-      setLoading(false);
-    }
+      },
+    });
   };
 
   const styles: Record<string, CSSProperties> = {

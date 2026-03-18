@@ -24,6 +24,7 @@ import {
   X,
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../components/AuthContext';
 import NotificationBell from '../../components/NotificationBell';
 import PassengerTracking from '../../components/PassengerTracking';
@@ -94,11 +95,11 @@ const statusTone: Record<string, string> = {
   SCHEDULED: 'border border-amber-200 bg-amber-50 text-amber-700',
 };
 
-const cardClassName = 'rounded-[30px] border border-slate-200/80 bg-white/95 backdrop-blur-xl shadow-[0_24px_80px_rgba(15,23,42,0.08)]';
-const mutedCardClassName = 'rounded-[24px] border border-slate-200/80 bg-slate-50/85';
-const fieldClassName = 'w-full rounded-[20px] border border-slate-200 bg-white px-4 py-3.5 text-sm font-medium text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#0077B6] focus:ring-4 focus:ring-[#0077B6]/10';
-const primaryButtonClassName = 'inline-flex items-center justify-center gap-2 rounded-full bg-[#0077B6] px-5 py-3.5 text-sm font-bold text-white shadow-[0_18px_36px_rgba(0,119,182,0.28)] transition hover:bg-[#005F8E] disabled:cursor-not-allowed disabled:opacity-60';
-const secondaryButtonClassName = 'inline-flex items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-5 py-3.5 text-sm font-bold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50';
+const cardClassName = 'rounded-[20px] border border-slate-200 bg-white shadow-[0_8px_28px_rgba(15,23,42,0.06)]';
+const mutedCardClassName = 'rounded-[16px] border border-slate-200 bg-slate-50';
+const fieldClassName = 'w-full rounded-[20px] border border-slate-200 bg-white px-4 py-3.5 text-sm font-medium text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#0077B6] focus:ring-4 focus:ring-[#0077B6]/15';
+const primaryButtonClassName = 'inline-flex items-center justify-center gap-2 rounded-full bg-[#0077B6] px-5 py-3.5 text-sm font-bold text-white shadow-[0_14px_28px_rgba(0,119,182,0.26)] transition hover:bg-[#005F8E] hover:shadow-[0_18px_34px_rgba(0,119,182,0.3)] disabled:cursor-not-allowed disabled:opacity-60';
+const secondaryButtonClassName = 'inline-flex items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-5 py-3.5 text-sm font-bold text-slate-700 transition hover:border-[#0077B6]/25 hover:bg-[#0077B6]/5';
 
 const authHeaders = (accessToken?: string, includeJson = false): HeadersInit => {
   const headers: Record<string, string> = {};
@@ -184,6 +185,13 @@ const startOfToday = () => {
   return today;
 };
 
+const getGreetingLabel = () => {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Good morning';
+  if (hour < 18) return 'Good afternoon';
+  return 'Good evening';
+};
+
 const isTrackableTicket = (ticket: TicketRecord) => {
   if (!ticket.scheduleId) return false;
   const status = ticket.status.toUpperCase();
@@ -204,17 +212,18 @@ const isHistoryTicket = (ticket: TicketRecord) => {
 };
 
 const metricCard = (label: string, value: string, accent: string) => (
-  <div className="rounded-[24px] border border-slate-200/80 bg-white/90 p-5 shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
+  <div className="rounded-[16px] border border-slate-200 bg-white p-4 shadow-[0_4px_16px_rgba(15,23,42,0.04)]">
     <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">
       <span className="h-2 w-2 rounded-full bg-[#0077B6]" />
       {label}
     </div>
-    <div className={`mt-4 text-3xl font-black leading-none ${accent}`}>{value}</div>
+    <div className={`mt-3 text-2xl font-bold leading-none ${accent}`}>{value}</div>
   </div>
 );
 
 export default function CommuterDashboard() {
   const { user, signOut, accessToken } = useAuth();
+  const navigate = useNavigate();
 
   const [activeTab, setActiveTab] = useState<DashboardTab>('shared');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -227,7 +236,6 @@ export default function CommuterDashboard() {
   const [searchResults, setSearchResults] = useState<SearchTrip[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchPerformed, setSearchPerformed] = useState(false);
-  const [bookingLoadingId, setBookingLoadingId] = useState<string | null>(null);
   const [bookingError, setBookingError] = useState('');
   const [bookingSuccess, setBookingSuccess] = useState('');
   const [tickets, setTickets] = useState<TicketRecord[]>([]);
@@ -257,6 +265,8 @@ export default function CommuterDashboard() {
       );
     });
   }, [tickets]);
+  const greetingLabel = useMemo(() => getGreetingLabel(), []);
+  const nextTrip = useMemo(() => trackableTickets[0] || null, [trackableTickets]);
 
   const selectedTrackingTicket = useMemo(() => {
     return trackableTickets.find((ticket) => ticket.id === selectedTrackingTicketId) || trackableTickets[0] || null;
@@ -426,56 +436,31 @@ export default function CommuterDashboard() {
     }
   };
 
-  const handleBookSeat = async (trip: SearchTrip) => {
-    if (!accessToken) {
-      setBookingError('Your session expired. Please sign in again.');
-      return;
-    }
+  const handleSelectSeat = (trip: SearchTrip) => {
+    const params = new URLSearchParams({
+      trip_id: trip.schedule_id,
+      from: trip.pickup_stop,
+      to: trip.dropoff_stop,
+    });
 
-    setBookingError('');
-    setBookingSuccess('');
-    setBookingLoadingId(trip.schedule_id);
-
-    try {
-      const bookedTickets: TicketRecord[] = [];
-      for (let index = 0; index < passengers; index += 1) {
-        const response = await fetch('/api/book-ticket', {
-          method: 'POST',
-          headers: authHeaders(accessToken, true),
-          body: JSON.stringify({
-            schedule_id: trip.schedule_id,
-            from_stop: trip.pickup_stop,
-            to_stop: trip.dropoff_stop,
-            passenger_name: user?.name || undefined,
-          }),
-        });
-
-        const payload = await parseMaybeJson(response);
-        if (!response.ok || !payload?.success) {
-          throw new Error(payload?.message || 'Booking failed.');
-        }
-
-        bookedTickets.push(normalizeTicket({
-          ...payload.ticket,
+    navigate(`/dashboard/commuter/seatmap?${params.toString()}`, {
+      state: {
+        trip: {
+          trip_id: trip.schedule_id,
+          route_id: trip.route_id || '',
+          route: `${trip.pickup_stop} -> ${trip.dropoff_stop}`,
           from_stop: trip.pickup_stop,
           to_stop: trip.dropoff_stop,
-          schedule_id: trip.schedule_id,
-          schedule_date: trip.departure_date,
-          departure_time: trip.departure_time,
-          bus_plate: trip.bus_plate,
-          price: trip.price,
-        }));
-      }
-
-      setBookingSuccess(`Booked ${bookedTickets.length} ticket${bookedTickets.length > 1 ? 's' : ''} successfully.`);
-      await loadTickets();
-      setViewTicket(bookedTickets[bookedTickets.length - 1] || null);
-      setActiveTab('bookings');
-    } catch (error) {
-      setBookingError(error instanceof Error ? error.message : 'Booking failed.');
-    } finally {
-      setBookingLoadingId(null);
-    }
+          departure_time: trip.departure_time || '',
+          departure_date: trip.departure_date || '',
+          available_seats: trip.available_seats ?? 0,
+          capacity: trip.capacity ?? 0,
+          price: trip.price ?? 0,
+          bus_plate: trip.bus_plate || '',
+          company_name: trip.company_name || 'SafariTix operator',
+        },
+      },
+    });
   };
 
   const openTracking = (ticket: TicketRecord) => {
@@ -590,12 +575,12 @@ export default function CommuterDashboard() {
             <div className="mt-6 flex flex-col gap-4 rounded-[24px] border border-slate-200/80 bg-slate-50/70 p-4 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm leading-6 text-slate-500">Booking will reserve {passengers} seat{passengers > 1 ? 's' : ''} for this segment.</p>
               <button
-                onClick={() => void handleBookSeat(trip)}
-                disabled={bookingLoadingId === trip.schedule_id}
+                onClick={() => handleSelectSeat(trip)}
+                disabled={(trip.available_seats ?? 0) <= 0}
                 className={primaryButtonClassName + ' min-w-[150px]'}
               >
-                {bookingLoadingId === trip.schedule_id ? <RefreshCw className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
-                {bookingLoadingId === trip.schedule_id ? 'Booking...' : 'Book now'}
+                <Ticket className="h-4 w-4" />
+                {(trip.available_seats ?? 0) <= 0 ? 'Sold out' : 'Select Seat'}
               </button>
             </div>
           </div>
@@ -630,16 +615,16 @@ export default function CommuterDashboard() {
       <div className="space-y-5">
         {tickets.map((ticket) => (
           <div key={ticket.id} className={`${cardClassName} overflow-hidden`}>
-            <div className="border-b border-slate-100 bg-[linear-gradient(135deg,#031b34_0%,#0077B6_60%,#35A4E6_100%)] px-6 py-6 text-white">
+            <div className="border-b border-[#0077B6]/15 bg-[#f4f9ff] px-6 py-6 text-slate-900">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div>
-                  <div className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-sky-50">Active boarding pass</div>
+                  <div className="inline-flex items-center gap-2 rounded-full bg-[#0077B6]/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-[#0077B6]">Active boarding pass</div>
                   <div className="mt-4">
-                    <RouteLine from={ticket.fromStop} to={ticket.toStop} prominent={true} light={true} />
+                    <RouteLine from={ticket.fromStop} to={ticket.toStop} prominent={true} />
                   </div>
-                  <p className="mt-3 text-sm text-sky-50/90">{formatDate(ticket.scheduleDate)} · {formatTime(ticket.departureTime)} · Seat {ticket.seatNumber}</p>
+                  <p className="mt-3 text-sm text-slate-600">{formatDate(ticket.scheduleDate)} · {formatTime(ticket.departureTime)} · Seat {ticket.seatNumber}</p>
                 </div>
-                <span className={`inline-flex h-fit items-center rounded-full px-4 py-2 text-xs font-bold uppercase tracking-[0.24em] ${statusTone[ticket.status] || 'border border-slate-200 bg-white/15 text-white'}`}>
+                <span className={`inline-flex h-fit items-center rounded-full px-4 py-2 text-xs font-bold uppercase tracking-[0.24em] ${statusTone[ticket.status] || 'border border-slate-200 bg-slate-100 text-slate-700'}`}>
                   {ticket.status}
                 </span>
               </div>
@@ -665,7 +650,7 @@ export default function CommuterDashboard() {
                 </div>
               </div>
 
-              <div className="rounded-[26px] border border-slate-200/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] p-5">
+              <div className="rounded-[18px] border border-slate-200 bg-slate-50 p-5">
                 <div className="mb-3 flex items-center justify-between">
                   <div>
                     <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Boarding QR</div>
@@ -731,7 +716,7 @@ export default function CommuterDashboard() {
               <button
                 key={ticket.id}
                 onClick={() => setSelectedTrackingTicketId(ticket.id)}
-                className={`w-full rounded-[24px] border p-4 text-left transition ${selectedTrackingTicket.id === ticket.id ? 'border-[#0077B6]/30 bg-[#0077B6]/8 shadow-[0_12px_30px_rgba(0,119,182,0.12)]' : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/80'}`}
+                className={`w-full rounded-[16px] border p-4 text-left transition ${selectedTrackingTicket.id === ticket.id ? 'border-[#0077B6]/35 bg-[#0077B6]/7 shadow-[0_8px_20px_rgba(0,119,182,0.12)]' : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/80'}`}
               >
                 <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">{formatShortDate(ticket.scheduleDate)}</div>
                 <div className="mt-3"><RouteLine from={ticket.fromStop} to={ticket.toStop} /></div>
@@ -743,16 +728,16 @@ export default function CommuterDashboard() {
 
         <div className="space-y-6">
           <div className={`${cardClassName} overflow-hidden`}>
-            <div className="bg-[linear-gradient(135deg,#031b34_0%,#0077B6_60%,#35A4E6_100%)] px-6 py-6 text-white">
+            <div className="bg-[#f4f9ff] px-6 py-6 text-slate-900 border-b border-[#0077B6]/15">
               <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
                 <div>
-                  <div className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-sky-50">Currently selected</div>
+                  <div className="inline-flex items-center gap-2 rounded-full bg-[#0077B6]/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-[#0077B6]">Currently selected</div>
                   <div className="mt-4">
-                    <RouteLine from={selectedTrackingTicket.fromStop} to={selectedTrackingTicket.toStop} prominent={true} light={true} />
+                    <RouteLine from={selectedTrackingTicket.fromStop} to={selectedTrackingTicket.toStop} prominent={true} />
                   </div>
-                  <p className="mt-3 text-sm text-sky-50/90">Reference {selectedTrackingTicket.bookingRef} · Bus {selectedTrackingTicket.busPlate}</p>
+                  <p className="mt-3 text-sm text-slate-600">Reference {selectedTrackingTicket.bookingRef} · Bus {selectedTrackingTicket.busPlate}</p>
                 </div>
-                <span className={`inline-flex h-fit items-center rounded-full px-4 py-2 text-xs font-bold uppercase tracking-[0.24em] ${statusTone[selectedTrackingTicket.status] || 'border border-white/20 bg-white/15 text-white'}`}>
+                <span className={`inline-flex h-fit items-center rounded-full px-4 py-2 text-xs font-bold uppercase tracking-[0.24em] ${statusTone[selectedTrackingTicket.status] || 'border border-slate-200 bg-slate-100 text-slate-700'}`}>
                   {selectedTrackingTicket.status}
                 </span>
               </div>
@@ -860,17 +845,17 @@ export default function CommuterDashboard() {
                 {metricCard('Unread alerts', String(unreadNotifications.length), 'text-amber-600')}
               </div>
             </div>
-            <div className="rounded-[28px] bg-[linear-gradient(135deg,#031b34_0%,#0077B6_62%,#35A4E6_100%)] p-6 text-white shadow-[0_24px_50px_rgba(0,119,182,0.22)]">
+            <div className="rounded-[18px] border border-[#0077B6]/20 bg-[#f6fbff] p-6 text-slate-900 shadow-[0_8px_24px_rgba(0,119,182,0.08)]">
               <div className="flex items-center gap-3">
-                <div className="rounded-2xl bg-white/15 p-3">
+                <div className="rounded-2xl bg-[#0077B6]/10 p-3 text-[#0077B6]">
                   <Bell className="h-5 w-5" />
                 </div>
                 <div>
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-sky-50/90">Priority support</div>
-                  <div className="mt-1 text-2xl font-black">Travel assistance</div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#0077B6]">Priority support</div>
+                  <div className="mt-1 text-2xl font-bold">Travel assistance</div>
                 </div>
               </div>
-              <p className="mt-4 text-sm leading-6 text-sky-50/90">If your trip changes, boarding details update, or you need help with a booking, this panel keeps everything within reach.</p>
+              <p className="mt-4 text-sm leading-6 text-slate-600">If your trip changes, boarding details update, or you need help with a booking, this panel keeps everything within reach.</p>
             </div>
           </div>
         </div>
@@ -963,15 +948,15 @@ export default function CommuterDashboard() {
     return (
       <div className="space-y-6">
         <div className={`${cardClassName} overflow-hidden`}>
-          <div className="relative overflow-hidden bg-[linear-gradient(135deg,#031b34_0%,#0077B6_58%,#78c9f2_100%)] px-6 py-6 text-white lg:px-8 lg:py-8">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.18),transparent_28%),radial-gradient(circle_at_bottom_left,rgba(255,255,255,0.12),transparent_30%)]" />
+          <div className="relative overflow-hidden bg-[#f7fbff] px-6 py-6 text-slate-900 lg:px-8 lg:py-8 border-b border-[#0077B6]/15">
+            <div className="absolute inset-y-0 left-0 w-1.5 bg-[#0077B6]" />
             <div className="relative grid gap-8 xl:grid-cols-[1.12fr_0.88fr]">
               <div>
-                <div className="inline-flex items-center gap-2 rounded-full bg-white/15 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.26em] text-sky-50">
+                <div className="inline-flex items-center gap-2 rounded-full bg-[#0077B6]/10 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.26em] text-[#0077B6]">
                   <Bus className="h-4 w-4" /> Digital commuter platform
                 </div>
-                <h1 className="mt-5 max-w-3xl text-4xl font-black leading-[1.05] text-white lg:text-5xl">Book faster, manage live tickets, and track every journey with confidence.</h1>
-                <p className="mt-5 max-w-2xl text-sm leading-7 text-sky-50/90 lg:text-base">SafariTix brings booking, boarding passes, and live trip visibility into one modern commuter workspace designed for daily transport.
+                <h1 className="mt-5 max-w-3xl text-3xl font-bold leading-tight text-slate-900 lg:text-4xl">Book faster, manage live tickets, and track every journey with confidence.</h1>
+                <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-600 lg:text-base">SafariTix brings booking, boarding passes, and live trip visibility into one modern commuter workspace designed for daily transport.
                 </p>
 
                 <div className="mt-7 grid gap-4 md:grid-cols-3">
@@ -981,7 +966,7 @@ export default function CommuterDashboard() {
                 </div>
               </div>
 
-              <form onSubmit={handleSearch} className="rounded-[30px] border border-white/20 bg-white p-5 text-slate-900 shadow-[0_30px_60px_rgba(8,47,73,0.22)] lg:p-6">
+              <form onSubmit={handleSearch} className="rounded-[16px] border border-slate-200 bg-white p-5 text-slate-900 shadow-[0_10px_28px_rgba(15,23,42,0.08)] lg:p-6">
                 <SectionHeader
                   eyebrow="Search Trips"
                   title="Find your next seat"
@@ -1133,8 +1118,8 @@ export default function CommuterDashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f4f9ff_0%,#eef5fb_36%,#f8fbff_100%)] text-slate-900">
-      <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(0,119,182,0.1),transparent_26%),radial-gradient(circle_at_top_right,rgba(53,164,230,0.12),transparent_24%),radial-gradient(circle_at_bottom_left,rgba(3,27,52,0.08),transparent_28%)]" />
+    <div className="min-h-screen bg-slate-100 text-slate-900">
+      <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(0,119,182,0.05),transparent_32%)]" />
       <datalist id="commuter-stop-options-from">
         {stopOptions.filter((stop) => stop !== toLocation).map((stop) => <option key={`from-${stop}`} value={stop} />)}
       </datalist>
@@ -1142,62 +1127,64 @@ export default function CommuterDashboard() {
         {stopOptions.filter((stop) => stop !== fromLocation).map((stop) => <option key={`to-${stop}`} value={stop} />)}
       </datalist>
 
-      <header className="sticky top-0 z-30 border-b border-white/70 bg-white/75 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-4 px-4 py-4 lg:px-6 xl:px-8">
-          <div className="flex min-w-0 items-center gap-3">
-            <button onClick={() => setMobileMenuOpen((current) => !current)} className="inline-flex rounded-2xl border border-slate-200 bg-white p-2 text-slate-700 shadow-sm lg:hidden">
-              {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-            </button>
-            <div className="rounded-[22px] bg-[linear-gradient(135deg,#031b34_0%,#0077B6_100%)] p-3 text-white shadow-[0_18px_36px_rgba(0,119,182,0.24)]">
-              <Bus className="h-5 w-5" />
+      <header className="sticky top-0 z-30 border-b border-slate-200/90 bg-white/95 backdrop-blur-xl">
+        <div className="mx-auto max-w-[1440px] px-4 lg:px-6 xl:px-8">
+          <div className="flex items-center justify-between gap-3 py-3.5">
+            <div className="flex min-w-0 items-center gap-3">
+              <button onClick={() => setMobileMenuOpen((current) => !current)} className="inline-flex rounded-xl border border-slate-200 bg-white p-2 text-slate-700 shadow-sm lg:hidden">
+                {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+              </button>
+              <div className="rounded-[16px] bg-[#0077B6] p-2.5 text-white shadow-[0_12px_24px_rgba(0,119,182,0.3)]">
+                <Bus className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.28em] text-[#0077B6]">SafariTix</div>
+                <div className="truncate text-base font-black font-montserrat text-slate-900 sm:text-lg">Commuter Dashboard</div>
+              </div>
             </div>
-            <div className="min-w-0">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-[#0077B6]">SafariTix</div>
-              <div className="truncate text-lg font-black text-slate-900">Commuter Dashboard</div>
+
+            <div className="flex items-center gap-2 sm:gap-3">
+              <button onClick={() => void refreshDashboard()} className="hidden items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 transition hover:border-[#0077B6]/25 hover:bg-[#0077B6]/5 md:inline-flex">
+                <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+                Refresh
+              </button>
+              <NotificationBell />
+              <div className="hidden items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 xl:flex">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#0077B6]/10 text-[#0077B6]">
+                  <User className="h-4 w-4" />
+                </div>
+                <div className="max-w-[180px] truncate text-xs font-semibold text-slate-600">{user?.name || 'Commuter'}</div>
+              </div>
+              <button onClick={signOut} className="inline-flex items-center gap-2 rounded-full bg-rose-50 px-3.5 py-2 text-sm font-bold text-rose-700 transition hover:bg-rose-100 sm:px-4">
+                <LogOut className="h-4 w-4" />
+                <span className="hidden sm:inline">Sign out</span>
+              </button>
             </div>
           </div>
 
-          <div className="hidden items-center gap-2 rounded-full border border-white/70 bg-white/80 p-2 shadow-[0_14px_32px_rgba(15,23,42,0.06)] xl:flex">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => setActiveTab(item.id)}
-                  className={`inline-flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-bold transition ${activeTab === item.id ? 'bg-[#0077B6] text-white shadow-[0_16px_30px_rgba(0,119,182,0.24)]' : 'text-slate-600 hover:bg-slate-100'}`}
-                >
-                  <Icon className="h-4 w-4" />
-                  {item.label}
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="flex items-center gap-2 sm:gap-3">
-            <button onClick={() => void refreshDashboard()} className="hidden items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 md:inline-flex">
-              <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-              Refresh
-            </button>
-            <NotificationBell />
-            <div className="hidden items-center gap-3 rounded-full border border-slate-200 bg-white px-3 py-2 shadow-sm lg:flex">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#0077B6]/10 text-[#0077B6]">
-                <User className="h-5 w-5" />
-              </div>
-              <div>
-                <div className="text-sm font-black text-slate-900">{user?.name || 'Commuter'}</div>
-                <div className="max-w-[220px] truncate text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">{user?.email || 'Passenger account'}</div>
-              </div>
-            </div>
-            <button onClick={signOut} className="inline-flex items-center gap-2 rounded-full bg-rose-50 px-4 py-2.5 text-sm font-bold text-rose-700 transition hover:bg-rose-100">
-              <LogOut className="h-4 w-4" />
-              <span className="hidden sm:inline">Sign out</span>
-            </button>
+          <div className="hidden pb-3 lg:block">
+            <nav className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/90 p-2">
+              {navItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = activeTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => setActiveTab(item.id)}
+                    className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition ${isActive ? 'bg-[#0077B6] text-white shadow-[0_10px_20px_rgba(0,119,182,0.24)]' : 'bg-white text-slate-600 hover:bg-[#0077B6]/8 hover:text-[#0077B6]'}`}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {item.label}
+                  </button>
+                );
+              })}
+            </nav>
           </div>
         </div>
 
         {mobileMenuOpen && (
-          <div className="border-t border-slate-200 bg-white/95 px-4 py-4 backdrop-blur lg:hidden">
-            <div className="grid gap-2">
+          <div className="border-t border-slate-200 bg-white px-4 py-4 lg:hidden">
+            <div className="mx-auto grid max-w-[1440px] gap-2 sm:grid-cols-2">
               {navItems.map((item) => {
                 const Icon = item.icon;
                 return (
@@ -1207,7 +1194,7 @@ export default function CommuterDashboard() {
                       setActiveTab(item.id);
                       setMobileMenuOpen(false);
                     }}
-                    className={`inline-flex items-center gap-3 rounded-[22px] px-4 py-3 text-left text-sm font-bold transition ${activeTab === item.id ? 'bg-[#0077B6] text-white' : 'bg-slate-50 text-slate-700'}`}
+                    className={`inline-flex items-center gap-3 rounded-xl px-4 py-3 text-left text-sm font-bold transition ${activeTab === item.id ? 'bg-[#0077B6] text-white shadow-[0_10px_18px_rgba(0,119,182,0.24)]' : 'border border-slate-200 bg-slate-50 text-slate-700 hover:bg-[#0077B6]/5'}`}
                   >
                     <Icon className="h-4 w-4" />
                     {item.label}
@@ -1222,10 +1209,10 @@ export default function CommuterDashboard() {
       <div className="mx-auto grid max-w-[1440px] gap-6 px-4 py-6 lg:grid-cols-[320px_minmax(0,1fr)] lg:px-6 xl:px-8">
         <aside className="hidden lg:block">
           <div className={`${cardClassName} sticky top-28 overflow-hidden p-5`}>
-            <div className="rounded-[28px] bg-[linear-gradient(145deg,#031b34_0%,#0077B6_58%,#6ec5f0_100%)] p-6 text-white shadow-[0_26px_60px_rgba(0,119,182,0.24)]">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-sky-50/90">Welcome back</div>
-              <div className="mt-3 text-3xl font-black leading-tight">{user?.name || 'Commuter'}</div>
-              <p className="mt-3 text-sm leading-6 text-sky-50/90">A single workspace for booking, boarding, and live transport visibility.</p>
+            <div className="rounded-[16px] border border-[#0077B6]/20 bg-[#f7fbff] p-5 shadow-[0_8px_24px_rgba(0,119,182,0.08)]">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-[#0077B6]">Welcome back</div>
+              <div className="mt-2 text-2xl font-bold leading-tight text-slate-900">{user?.name || 'Commuter'}</div>
+              <p className="mt-3 text-sm leading-6 text-slate-600">A single workspace for booking, boarding, and live transport visibility.</p>
               <div className="mt-6 grid grid-cols-2 gap-3">
                 <SidebarMiniStat label="Active trips" value={String(trackableTickets.length)} />
                 <SidebarMiniStat label="Unread alerts" value={String(unreadNotifications.length)} />
@@ -1245,7 +1232,7 @@ export default function CommuterDashboard() {
                   <button
                     key={item.id}
                     onClick={() => setActiveTab(item.id)}
-                    className={`flex w-full items-center justify-between rounded-[22px] px-4 py-3.5 text-left text-sm font-bold transition ${activeTab === item.id ? 'bg-[#0077B6] text-white shadow-[0_14px_30px_rgba(0,119,182,0.18)]' : 'bg-slate-50/85 text-slate-700 hover:bg-slate-100'}`}
+                    className={`flex w-full items-center justify-between rounded-[20px] px-4 py-3.5 text-left text-sm font-bold transition ${activeTab === item.id ? 'bg-[#0077B6] text-white shadow-[0_12px_24px_rgba(0,119,182,0.2)]' : 'bg-slate-50 text-slate-700 hover:bg-[#0077B6]/5'}`}
                   >
                     <span className="inline-flex items-center gap-3">
                       <Icon className="h-4 w-4" />
@@ -1257,7 +1244,7 @@ export default function CommuterDashboard() {
               })}
             </div>
 
-            <div className="mt-6 rounded-[24px] border border-slate-200/80 bg-slate-50/80 p-4">
+            <div className="mt-6 rounded-[16px] border border-slate-200 bg-slate-50 p-4">
               <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">Member profile</div>
               <div className="mt-3 text-sm font-black text-slate-900">{user?.email || 'Passenger account'}</div>
               <button onClick={() => setActiveTab('profile')} className="mt-4 inline-flex items-center gap-2 text-sm font-bold text-[#0077B6] transition hover:text-[#005F8E]">
@@ -1268,20 +1255,72 @@ export default function CommuterDashboard() {
           </div>
         </aside>
 
-        <main className="min-w-0">{renderContent()}</main>
+        <main className="min-w-0 space-y-6">
+          <section className={`${cardClassName} relative overflow-hidden`}>
+            <div className="absolute inset-y-0 left-0 w-1.5 bg-[#0077B6]" />
+            <div className="relative grid gap-6 px-6 py-6 lg:grid-cols-[1.08fr_0.92fr] lg:px-7">
+              <div>
+                <div className="inline-flex items-center gap-2 rounded-full bg-[#0077B6]/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.24em] text-[#0077B6]">
+                  <Bus className="h-3.5 w-3.5" />
+                  Today at a glance
+                </div>
+                <h2 className="mt-4 text-3xl font-bold leading-tight text-slate-950 lg:text-4xl lg:leading-tight">
+                  {greetingLabel}, {user?.name || 'Commuter'}.
+                </h2>
+                <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600 lg:text-base">
+                  Plan, book, and track from one calm dashboard designed for daily travel decisions.
+                </p>
+
+                <div className="mt-5 flex flex-wrap items-center gap-3">
+                  <button onClick={() => setActiveTab('shared')} className={primaryButtonClassName + ' !px-4 !py-2.5'}>
+                    <Search className="h-4 w-4" /> Book a trip
+                  </button>
+                  <button onClick={() => setActiveTab('bookings')} className={secondaryButtonClassName + ' !px-4 !py-2.5'}>
+                    <BookOpen className="h-4 w-4" /> Open tickets
+                  </button>
+                  <button onClick={() => setActiveTab('map')} className="inline-flex items-center gap-2 rounded-full border border-[#0077B6]/20 bg-white px-4 py-2.5 text-sm font-bold text-[#0077B6] transition hover:bg-[#0077B6]/8">
+                    <Navigation className="h-4 w-4" /> Live tracking
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                {metricCard('Active trips', String(trackableTickets.length), 'text-slate-900')}
+                {metricCard('Booked tickets', String(tickets.length), 'text-slate-900')}
+                {metricCard('Unread alerts', String(unreadNotifications.length), 'text-[#0077B6]')}
+                <div className={mutedCardClassName + ' p-5'}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Next trip</div>
+                    <span className="rounded-full bg-[#0077B6]/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-[#0077B6]">Upcoming</span>
+                  </div>
+                  {nextTrip ? (
+                    <>
+                      <div className="mt-3"><RouteLine from={nextTrip.fromStop} to={nextTrip.toStop} /></div>
+                      <div className="mt-2 text-sm text-slate-500">{formatShortDate(nextTrip.scheduleDate)} · {formatTime(nextTrip.departureTime)} · Seat {nextTrip.seatNumber}</div>
+                    </>
+                  ) : (
+                    <div className="mt-3 text-sm text-slate-500">Book your next journey to populate this preview.</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {renderContent()}
+        </main>
       </div>
 
       {viewTicket && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4" onClick={() => setViewTicket(null)}>
           <div className="w-full max-w-md overflow-hidden rounded-[32px] bg-white shadow-[0_30px_80px_rgba(15,23,42,0.35)]" onClick={(event) => event.stopPropagation()}>
-            <div className="bg-[linear-gradient(135deg,#031b34_0%,#0077B6_58%,#6ec5f0_100%)] px-6 pb-8 pt-6 text-white">
+            <div className="bg-[#f4f9ff] px-6 pb-8 pt-6 text-slate-900 border-b border-[#0077B6]/15">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-sky-100">Boarding pass</div>
-                  <div className="mt-4"><RouteLine from={viewTicket.fromStop} to={viewTicket.toStop} prominent={true} light={true} /></div>
-                  <p className="mt-3 text-sm text-sky-100">{formatDate(viewTicket.scheduleDate)} · {formatTime(viewTicket.departureTime)}</p>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#0077B6]">Boarding pass</div>
+                  <div className="mt-4"><RouteLine from={viewTicket.fromStop} to={viewTicket.toStop} prominent={true} /></div>
+                  <p className="mt-3 text-sm text-slate-600">{formatDate(viewTicket.scheduleDate)} · {formatTime(viewTicket.departureTime)}</p>
                 </div>
-                <button onClick={() => setViewTicket(null)} className="rounded-full bg-white/15 p-2 transition hover:bg-white/25">
+                <button onClick={() => setViewTicket(null)} className="rounded-full bg-slate-200 p-2 transition hover:bg-slate-300">
                   <X className="h-5 w-5" />
                 </button>
               </div>
@@ -1311,7 +1350,7 @@ export default function CommuterDashboard() {
 
 function TicketFact({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   return (
-    <div className="rounded-[22px] border border-slate-200/80 bg-slate-50/80 p-4">
+    <div className="rounded-[20px] border border-slate-200 bg-slate-50/80 p-4">
       <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">{label}</div>
       <div className={`mt-2 text-sm font-black text-slate-900 ${mono ? 'font-mono' : ''}`}>{value}</div>
     </div>
@@ -1338,7 +1377,7 @@ function SectionHeader({
   return (
     <div>
       <div className="text-[11px] font-semibold uppercase tracking-[0.28em] text-[#0077B6]">{eyebrow}</div>
-      <h2 className="mt-2 text-2xl font-black text-slate-950 lg:text-[30px] lg:leading-[1.1]">{title}</h2>
+      <h2 className="mt-2 text-2xl font-bold text-slate-950 lg:text-[30px] lg:leading-[1.1]">{title}</h2>
       <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">{description}</p>
     </div>
   );
@@ -1387,7 +1426,7 @@ function EmptyPanel({
       <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[#0077B6]/10 text-[#0077B6]">
         <Icon className={`h-7 w-7 ${spinning ? 'animate-spin' : ''}`} />
       </div>
-      <h3 className="mt-5 text-2xl font-black text-slate-900">{title}</h3>
+      <h3 className="mt-5 text-2xl font-bold text-slate-900">{title}</h3>
       <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-slate-500">{description}</p>
     </div>
   );
@@ -1405,14 +1444,14 @@ function ShortcutCard({
   onClick: () => void;
 }) {
   return (
-    <button onClick={onClick} className="rounded-[24px] border border-slate-200/80 bg-slate-50/70 p-5 text-left transition hover:border-[#0077B6]/20 hover:bg-[#0077B6]/5">
+    <button onClick={onClick} className="rounded-[22px] border border-slate-200 bg-white p-5 text-left transition hover:border-[#0077B6]/20 hover:shadow-[0_12px_26px_rgba(0,119,182,0.1)]">
       <div className="flex items-center justify-between gap-3">
         <div className="flex h-11 w-11 items-center justify-center rounded-[16px] bg-white text-[#0077B6] shadow-sm">
           <Icon className="h-5 w-5" />
         </div>
         <ArrowRight className="h-4 w-4 text-slate-400" />
       </div>
-      <div className="mt-4 text-lg font-black text-slate-900">{title}</div>
+      <div className="mt-4 text-lg font-bold text-slate-900">{title}</div>
       <p className="mt-2 text-sm leading-6 text-slate-500">{description}</p>
     </button>
   );
@@ -1420,7 +1459,7 @@ function ShortcutCard({
 
 function ContactCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-[22px] border border-slate-200/80 bg-slate-50/70 p-4">
+    <div className="rounded-[20px] border border-slate-200 bg-slate-50/70 p-4">
       <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">{label}</div>
       <div className="mt-2 text-sm font-black text-slate-900">{value}</div>
     </div>
@@ -1429,9 +1468,9 @@ function ContactCard({ label, value }: { label: string; value: string }) {
 
 function SidebarMiniStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-[20px] bg-white/12 px-4 py-3 backdrop-blur-sm">
-      <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-sky-50/80">{label}</div>
-      <div className="mt-2 text-2xl font-black text-white">{value}</div>
+    <div className="rounded-[16px] border border-[#0077B6]/10 bg-white px-4 py-3">
+      <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">{label}</div>
+      <div className="mt-2 text-2xl font-bold text-slate-900">{value}</div>
     </div>
   );
 }

@@ -20,6 +20,8 @@ type SeatMapProps = {
   scheduleId: string | number;
   price?: number;
   className?: string;
+  segmentFrom?: string;
+  segmentTo?: string;
   onBooked?: (result: any) => void;
   onSelect?: (seat: any, lock?: any) => void; // Legacy callback for external booking flow
   scheduleDetails?: {
@@ -29,10 +31,15 @@ type SeatMapProps = {
     scheduleDate: string;
     busPlateNumber: string;
     companyName: string;
+    fromStop?: string;
+    toStop?: string;
+    tripId?: string | number;
+    availableSeats?: number;
+    capacity?: number;
   };
 };
 
-export default function SeatMap({ scheduleId, price = 0, className = '', onBooked, onSelect, scheduleDetails }: SeatMapProps) {
+export default function SeatMap({ scheduleId, price = 0, className = '', segmentFrom, segmentTo, onBooked, onSelect, scheduleDetails }: SeatMapProps) {
   const { user, accessToken } = useAuth();
   const navigate = useNavigate();
   const [seats, setSeats] = useState<Seat[]>([]);
@@ -62,14 +69,56 @@ export default function SeatMap({ scheduleId, price = 0, className = '', onBooke
       if (accessToken) hdrs['Authorization'] = `Bearer ${accessToken}`;
       const res = await fetch(`/api/seats/schedules/${scheduleId}`, { headers: hdrs });
       const ct = (res.headers.get('content-type') || '').toLowerCase();
-      if (!res.ok) {
+
+      let json: any;
+      if (res.ok) {
+        if (!ct.includes('application/json')) {
+          throw new Error('Seat endpoint returned non-JSON response');
+        }
+        json = await res.json();
+      } else {
         const txt = await res.text();
-        throw new Error(txt || `Failed to load seats (${res.status})`);
+        const textLower = String(txt || '').toLowerCase();
+        const scheduleMissing = res.status === 404 && textLower.includes('schedule not found');
+
+        // Shared-trip fallback: build seat map from segment availability endpoint.
+        if (scheduleMissing && segmentFrom && segmentTo) {
+          const segmentRes = await fetch(
+            `/api/available-seats?schedule_id=${encodeURIComponent(String(scheduleId))}&from=${encodeURIComponent(segmentFrom)}&to=${encodeURIComponent(segmentTo)}`,
+            { headers: hdrs }
+          );
+
+          if (!segmentRes.ok) {
+            const segmentTxt = await segmentRes.text().catch(() => '');
+            throw new Error(segmentTxt || `Failed to load segment seats (${segmentRes.status})`);
+          }
+
+          const segmentPayload = await segmentRes.json();
+          const totalSeats = Number(
+            segmentPayload?.total_seats ??
+            scheduleDetails?.capacity ??
+            29
+          ) || 29;
+          const segmentSeats = Array.isArray(segmentPayload?.seat_numbers)
+            ? segmentPayload.seat_numbers.map((seat: unknown) => String(seat))
+            : [];
+          const segmentAvailable = new Set(segmentSeats);
+
+          json = {
+            summary: { total: totalSeats },
+            seats: Array.from({ length: totalSeats }, (_, idx) => {
+              const seatNum = String(idx + 1);
+              return {
+                seat_number: seatNum,
+                state: segmentAvailable.has(seatNum) ? 'AVAILABLE' : 'BOOKED',
+                is_driver: false,
+              };
+            }),
+          };
+        } else {
+          throw new Error(txt || `Failed to load seats (${res.status})`);
+        }
       }
-      if (!ct.includes('application/json')) {
-        throw new Error('Seat endpoint returned non-JSON response');
-      }
-      const json = await res.json();
       
       // Debug: Log the raw API response
       console.log('\n🔍 === API RESPONSE ===');
@@ -137,7 +186,7 @@ export default function SeatMap({ scheduleId, price = 0, className = '', onBooke
       });
 
       // Build organized seat array (1 to N)
-      const organized: Seat[] = [];
+      let organized: Seat[] = [];
       for (let i = 1; i <= totalSeatsFromResp; i++) {
         const seatNum = String(i);
         const existing = seatMap.get(seatNum);
@@ -147,6 +196,34 @@ export default function SeatMap({ scheduleId, price = 0, className = '', onBooke
           // Seat not in response = AVAILABLE (or missing)
           console.warn(`⚠️ Seat ${seatNum} not in API response, defaulting to AVAILABLE`);
           organized.push({ seat_number: seatNum, state: 'AVAILABLE' } as Seat);
+        }
+      }
+
+      // Segment-specific seat availability overlay.
+      // Seats that cannot serve the selected segment are marked as BOOKED.
+      if (segmentFrom && segmentTo) {
+        try {
+          const segmentRes = await fetch(
+            `/api/available-seats?schedule_id=${encodeURIComponent(String(scheduleId))}&from=${encodeURIComponent(segmentFrom)}&to=${encodeURIComponent(segmentTo)}`,
+            { headers: hdrs }
+          );
+
+          if (segmentRes.ok) {
+            const segmentPayload = await segmentRes.json();
+            const segmentSeatNumbers = Array.isArray(segmentPayload?.seat_numbers)
+              ? segmentPayload.seat_numbers.map((seat: unknown) => String(seat))
+              : [];
+            const segmentAvailable = new Set(segmentSeatNumbers);
+
+            organized = organized.map((seat) => {
+              if (seat.is_driver || seat.state === 'DRIVER') return seat;
+              if (seat.state === 'BOOKED' || seat.state === 'LOCKED') return seat;
+              if (segmentAvailable.has(String(seat.seat_number))) return seat;
+              return { ...seat, state: 'BOOKED' };
+            });
+          }
+        } catch (segmentErr) {
+          console.warn('Segment availability check failed:', segmentErr);
         }
       }
 
@@ -237,7 +314,7 @@ export default function SeatMap({ scheduleId, price = 0, className = '', onBooke
     }, 3000);
     
     return () => clearInterval(intervalId);
-  }, [scheduleId, accessToken]);
+  }, [scheduleId, accessToken, segmentFrom, segmentTo]);
   
   // Force refresh when returning from navigation (e.g., payment page)
   useEffect(() => {
@@ -347,7 +424,10 @@ export default function SeatMap({ scheduleId, price = 0, className = '', onBooke
           selectedSeats: picks,
           scheduleId,
           price,
-          scheduleDetails
+          scheduleDetails,
+          tripId: scheduleDetails?.tripId || scheduleId,
+          fromStop: segmentFrom || scheduleDetails?.fromStop,
+          toStop: segmentTo || scheduleDetails?.toStop,
         }
       });
       console.log('✅ Navigation initiated');

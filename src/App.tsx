@@ -34,6 +34,7 @@ import DriverTracking from './pages/company/DriverTracking';
 import FirstLoginChange from './pages/FirstLoginChange';
 import AccountSettings from './pages/account/AccountSettings';
 import PaymentPage from './pages/commuter/PaymentPage';
+import SeatMapPage from './pages/commuter/SeatMapPage';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import VerifyEmail from './pages/VerifyEmail';
@@ -74,6 +75,7 @@ const App = () => {
 
               <Route path='commuter' element={<RequireRole allowed={["commuter"]}><CommuterLayout/></RequireRole>}>
                 <Route index element={<CommuterDashboard/>} />
+                <Route path='seatmap' element={<SeatMapPage/>} />
                 <Route path='payment' element={<PaymentPage/>} />
               </Route>
 
@@ -94,6 +96,7 @@ const App = () => {
             <Route path='/reset-password' element={<ResetPassword/>} />
             <Route path='/verify-email' element={<VerifyEmail/>} />
             <Route path='/profile' element={<RequireRole allowed={["commuter","company_admin","driver","admin"]}><ProfilePage/></RequireRole>} />
+            <Route path='/seatmap' element={<RequireRole allowed={["commuter"]}><SeatMapPage/></RequireRole>} />
             <Route path='/admin/company-verifications' element={<Navigate to='/dashboard/admin/company-verifications' replace />} />
 
             {/* Alias dashboard routes */}

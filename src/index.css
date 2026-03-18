@@ -1,4 +1,17 @@
 @import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@600;700;800&display=swap');
+
+:root {
+  --safaritix-primary: #0077b6;
+  --safaritix-secondary: #f4a261;
+  --safaritix-success: #27ae60;
+  --safaritix-danger: #e63946;
+}
+
+body {
+  font-family: Inter, Roboto, sans-serif;
+}
+
 ::-webkit-scrollbar {
   border-radius: 2%;
   width: 8px;

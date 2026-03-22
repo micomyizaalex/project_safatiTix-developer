@@ -16,6 +16,7 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { DEFAULT_PLAN_PERMISSIONS } from '../../utils/subscriptionPlans';
 import AdminNotificationBell from '../../components/AdminNotificationBell';
+import AdminFleetTracking from '../../components/AdminFleetTracking';
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 // ==================== BRAND COLORS ====================
@@ -2739,14 +2740,7 @@ function LiveTracking() {
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       <h1 className="text-2xl lg:text-3xl font-black font-['Montserrat'] text-[#2B2D42]">Live Fleet Tracking</h1>
-      
-      <div className="bg-white rounded-2xl p-8 border border-gray-200 aspect-video flex items-center justify-center">
-        <div className="text-center">
-          <MapPin className="w-16 h-16 text-[#0077B6] mx-auto mb-4" />
-          <h3 className="text-xl font-bold text-gray-900 mb-2">Map Integration</h3>
-          <p className="text-gray-600">GPS tracking map coming soon</p>
-        </div>
-      </div>
+      <AdminFleetTracking />
     </div>
   );
 }

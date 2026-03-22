@@ -9,6 +9,7 @@ import CompanyFleetTracking from '../../components/CompanyFleetTracking';
 import CompanySharedRoutesSection from '../../components/CompanySharedRoutesSection';
 import NotificationBell from '../../components/NotificationBell';
 import CompanySubscriptionManagement from './CompanySubscriptionManagement';
+import ComplaintManagementCompany from '../../components/ComplaintManagementCompany';
 import {
   LayoutDashboard,
   Bus,
@@ -24,6 +25,7 @@ import {
   ChevronRight,
   DollarSign,
   AlertCircle,
+  AlertTriangle,
   CheckCircle,
   Crown,
   Clock,
@@ -161,6 +163,7 @@ export default function CompanyDashboard() {
     { id: 'drivers', label: 'Drivers', icon: Users },
     { id: 'shared', label: 'Shared Routes', icon: Navigation },
     { id: 'tickets', label: 'Tickets', icon: Ticket },
+    { id: 'complaints', label: 'Complaints', icon: AlertTriangle },
     {
       id: 'revenue',
       label: 'Revenue & Reports',
@@ -808,6 +811,7 @@ export default function CompanyDashboard() {
             />
           )}
           {activeSection === 'tickets' && <TicketsManagement />}
+          {activeSection === 'complaints' && <ComplaintManagementCompany />}
           {activeSection === 'revenue' && (hasFrontendPlanFeature(subscriptionState.planPermissions, 'revenueReports') ? <RevenueReports /> : <PlanLockedGate title="Revenue & Reports requires Enterprise" description="Upgrade to Enterprise to unlock revenue reports, full analytics, CSV exports, and premium reporting tools." />)}
           {activeSection === 'subscription' && <CompanySubscriptionManagement />}
           {activeSection === 'tracking' && <TrackingSection totalActiveTrips={totalActiveTrips} />}

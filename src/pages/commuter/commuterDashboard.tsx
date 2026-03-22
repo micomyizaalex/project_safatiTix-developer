@@ -5,6 +5,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../components/AuthContext';
 import PassengerTracking from '../../components/PassengerTracking';
 import BookingList from './dashboard/components/BookingList';
+import ComplaintSection from './dashboard/components/ComplaintSection';
 import DashboardHeader from './dashboard/components/DashboardHeader';
 import DashboardMetrics from './dashboard/components/DashboardMetrics';
 import Notifications from './dashboard/components/Notifications';
@@ -161,6 +162,7 @@ export default function CommuterDashboard() {
   const loadNotifications = async () => {
     if (!accessToken) {
       setNotifications([]);
+      setLoadingNotifications(false);
       return;
     }
 
@@ -174,10 +176,9 @@ export default function CommuterDashboard() {
         const list = Array.isArray(payload?.data) ? payload.data.map(normalizeNotification) : [];
         setNotifications(list);
       } else {
-        setNotifications([]);
+        pushAlert('info', 'Could not refresh notifications right now.');
       }
     } catch {
-      setNotifications([]);
       pushAlert('info', 'Notifications are temporarily unavailable.');
     } finally {
       setLoadingNotifications(false);
@@ -252,10 +253,6 @@ export default function CommuterDashboard() {
     document.getElementById('track-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
-  const openNotifications = () => {
-    document.getElementById('notifications-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
-
   const goToSearch = () => {
     const params = new URLSearchParams();
     if (searchFrom.trim()) params.set('from', searchFrom.trim());
@@ -325,9 +322,11 @@ export default function CommuterDashboard() {
       <DashboardHeader
         userName={user?.name || 'Commuter'}
         unreadCount={unreadCount}
+        notifications={notifications}
+        loadingNotifications={loadingNotifications}
         refreshing={refreshing}
         onRefresh={refreshDashboard}
-        onOpenNotifications={openNotifications}
+        onLoadNotifications={loadNotifications}
         onSignOut={signOut}
       />
 
@@ -354,6 +353,13 @@ export default function CommuterDashboard() {
               className="flex w-full items-center justify-between rounded-xl bg-slate-50 px-3 py-2 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
             >
               Bus Tracking
+              <ArrowRight className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => document.getElementById('complaints-panel')?.scrollIntoView({ behavior: 'smooth' })}
+              className="flex w-full items-center justify-between rounded-xl bg-slate-50 px-3 py-2 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+            >
+              Complaints
               <ArrowRight className="h-4 w-4" />
             </button>
             <button
@@ -503,7 +509,7 @@ export default function CommuterDashboard() {
               />
             </div>
 
-            <div className="mt-5 grid gap-4 lg:grid-cols-2">
+            <div className="mt-5 hidden grid gap-4 lg:grid-cols-2">
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <h4 className="text-sm font-semibold uppercase tracking-[0.14em] text-slate-500">Upcoming Trips</h4>
                 <div className="mt-3 space-y-2">
@@ -540,7 +546,7 @@ export default function CommuterDashboard() {
             </div>
           </section>
 
-          <section id="notifications-panel">
+          <section id="notifications-panel" className="hidden">
             <Notifications
               alerts={alerts}
               notifications={notifications}
@@ -616,6 +622,17 @@ export default function CommuterDashboard() {
               </div>
             )}
           </section>
+
+          <ComplaintSection
+            accessToken={accessToken}
+            bookings={bookings.map((b) => ({
+              id: b.id,
+              scheduleId: b.scheduleId,
+              fromStop: b.fromStop,
+              toStop: b.toStop,
+              scheduleDate: b.scheduleDate,
+            }))}
+          />
         </main>
       </div>
 

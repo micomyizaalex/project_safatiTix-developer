@@ -562,6 +562,30 @@ export default function DriverDashboard() {
 // ==================== DASHBOARD VIEW ====================
 function DashboardView({ setShowScanner, driverName, schedules, user, activeTrip, upcomingTrips, dashboardStats, recentPassengers, manifest, onStartTrip, onUpdateOperationalStatus, operationalStatuses, tripStatusUpdating, debugMessages }: { setShowScanner: any, driverName: any, schedules: any[], user: any, activeTrip: any, upcomingTrips: any[], dashboardStats: any, recentPassengers: any[], manifest: any, onStartTrip?: (schedule: any) => void, onUpdateOperationalStatus?: (schedule: any, nextStatus: string) => void, operationalStatuses?: string[], tripStatusUpdating?: string | null, debugMessages?: string[] }) {
   const navigate = _useNavigate();
+  const toFiniteNumber = (value: any): number | null => {
+    if (value === null || value === undefined || value === '') return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
+  const resolveSeatStats = (trip: any) => {
+    const totalSeats = toFiniteNumber(trip.totalSeats ?? trip.total ?? trip.seatCapacity ?? trip.capacity ?? trip.bus?.capacity);
+    const availableSeats = toFiniteNumber(trip.seatsAvailable ?? trip.availableSeats ?? trip.available_seats);
+
+    const bookedSeats = toFiniteNumber(
+      trip.bookedSeats
+      ?? trip.booked_seats
+      ?? trip.passengers
+      ?? trip.soldSeats
+      ?? (totalSeats !== null && availableSeats !== null ? Math.max(totalSeats - availableSeats, 0) : null)
+    );
+
+    const leftSeats = totalSeats !== null && bookedSeats !== null
+      ? Math.max(totalSeats - bookedSeats, 0)
+      : null;
+
+    return { totalSeats, bookedSeats, leftSeats };
+  };
   const activePassengers = manifest?.stats?.total ?? activeTrip?.passengers ?? 0;
   const activeBoarded = manifest?.stats?.boarded ?? recentPassengers.filter((passenger) => passenger.checked).length;
   const availableStatuses = Array.isArray(operationalStatuses) && operationalStatuses.length > 0 ? operationalStatuses : ['ASSIGNED', 'BOARDING', 'DEPARTED', 'ON_ROUTE', 'ARRIVING', 'COMPLETED'];
@@ -739,24 +763,7 @@ function DashboardView({ setShowScanner, driverName, schedules, user, activeTrip
                 <div className="flex items-center justify-between">
                     <div className="text-sm text-slate-600">
                     {(() => {
-                      const totalSeats = Number.isFinite(Number(trip.totalSeats ?? trip.total))
-                        ? Number(trip.totalSeats ?? trip.total)
-                        : null;
-                      const availableSeats = Number.isFinite(Number(trip.seatsAvailable))
-                        ? Number(trip.seatsAvailable)
-                        : null;
-
-                      const bookedSeats = typeof trip.passengers === 'number'
-                        ? trip.passengers
-                        : (typeof trip.soldSeats === 'number'
-                          ? trip.soldSeats
-                          : (totalSeats !== null && availableSeats !== null
-                            ? Math.max(totalSeats - availableSeats, 0)
-                            : null));
-
-                      const leftSeats = totalSeats !== null
-                        ? Math.max(totalSeats - Number(bookedSeats || 0), 0)
-                        : null;
+                      const { totalSeats, bookedSeats, leftSeats } = resolveSeatStats(trip);
 
                       if (totalSeats === null || bookedSeats === null) {
                         return <span className="font-semibold">—/—</span>;
@@ -771,20 +778,7 @@ function DashboardView({ setShowScanner, driverName, schedules, user, activeTrip
                   </div>
                   <div className="flex gap-1">
                     {[...Array(5)].map((_, i) => {
-                      const totalSeats = Number.isFinite(Number(trip.totalSeats ?? trip.total))
-                        ? Number(trip.totalSeats ?? trip.total)
-                        : null;
-                      const availableSeats = Number.isFinite(Number(trip.seatsAvailable))
-                        ? Number(trip.seatsAvailable)
-                        : null;
-
-                      const bookedSeats = typeof trip.passengers === 'number'
-                        ? trip.passengers
-                        : (typeof trip.soldSeats === 'number'
-                          ? trip.soldSeats
-                          : (totalSeats !== null && availableSeats !== null
-                            ? Math.max(totalSeats - availableSeats, 0)
-                            : null));
+                      const { totalSeats, bookedSeats } = resolveSeatStats(trip);
 
                       const filled = (bookedSeats !== null && totalSeats && totalSeats > 0)
                         ? Math.floor((bookedSeats / totalSeats) * 5)

@@ -1,16 +1,19 @@
 {
   "rewrites": [
     {
-      "source": "/api/(.*)",
-      "destination": "https://backend-7cxc.onrender.com/api/$1"
-    },
-    {
-      "source": "/socket.io/(.*)",
-      "destination": "https://backend-7cxc.onrender.com/socket.io/$1"
-    },
-    {
       "source": "/(.*)",
       "destination": "/index.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/assets/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
     }
   ]
 }

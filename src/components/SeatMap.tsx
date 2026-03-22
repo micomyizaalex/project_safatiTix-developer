@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { User, Loader2 } from 'lucide-react';
 import { useAuth } from './AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -40,8 +40,17 @@ export default function SeatMap({ scheduleId, price = 0, className = '', onBooke
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const [toast, setToast] = useState<{message: string, type: 'error' | 'info'} | null>(null);
+  const lastFetchTime = useRef<number>(0);
 
-  const fetchSeats = async (isAutoRefresh = false) => {
+  const fetchSeats = async (isAutoRefresh = false, forceRefresh = false) => {
+    // Prevent duplicate fetches within 1 second unless forced
+    const now = Date.now();
+    if (!forceRefresh && now - lastFetchTime.current < 1000) {
+      return;
+    }
+    lastFetchTime.current = now;
+    
     if (isAutoRefresh) {
       setRefreshing(true);
     } else {
@@ -61,33 +70,73 @@ export default function SeatMap({ scheduleId, price = 0, className = '', onBooke
         throw new Error('Seat endpoint returned non-JSON response');
       }
       const json = await res.json();
-      // Seats payload may be:
-      // - full seat objects with `seat_number` and `state`
-      // - an array of available seat numbers (strings/numbers)
-      // - empty array meaning "no seat info"
-      const returnedRaw = Array.isArray(json.seats) ? json.seats : (json.seats || []);
+      
+      // Debug: Log the raw API response
+      console.log('\n🔍 === API RESPONSE ===');
+      console.log('Total seats received:', json.seats?.length);
+      console.log('Summary:', json.summary);
+      console.log('Sample seats:', json.seats?.slice(0, 3));
+      
+      // PRODUCTION-GRADE PARSING: Strict validation
+      const returnedRaw = Array.isArray(json.seats) ? json.seats : [];
+      if (returnedRaw.length === 0) {
+        console.warn('⚠️ No seats returned from API');
+      }
 
-      // derive total seats (capacity) from response when available, otherwise default to 29
-      const totalSeatsFromResp = Number(json.totalSeats ?? json.total_seats ?? json.capacity ?? 29) || 29;
+      // Derive total seats from response
+      const totalSeatsFromResp = Number(json.summary?.total ?? json.totalSeats ?? json.total_seats ?? 29) || 29;
 
       const seatMap = new Map<string, Seat>();
 
-      // Normalize returnedRaw into seatMap. If element is object with seat_number, use its state.
-      // If elements are primitive numbers/strings, treat them as AVAILABLE seat numbers.
+      // BULLETPROOF PARSING - Backend is authoritative source of truth
       returnedRaw.forEach((entry: any) => {
-        if (entry && typeof entry === 'object' && (entry.seat_number !== undefined || entry.id !== undefined)) {
-          const num = String(entry.seat_number ?? entry.id ?? entry.seat);
-          const state = (entry.state || entry.status || '').toString().toUpperCase() || (entry.locked ? 'LOCKED' : (entry.booked ? 'BOOKED' : 'AVAILABLE'));
-          seatMap.set(num, {
-            ...entry,
-            seat_number: num,
-            state: (state === 'LOCKED' || state === 'BOOKED') ? state as SeatState : 'AVAILABLE'
-          });
-        } else if (entry !== null && (typeof entry === 'string' || typeof entry === 'number')) {
-          seatMap.set(String(entry), { seat_number: String(entry), state: 'AVAILABLE' } as Seat);
+        if (!entry || typeof entry !== 'object') {
+          console.warn('⚠️ Invalid seat entry:', entry);
+          return;
+        }
+
+        const num = String(entry.seat_number ?? entry.id ?? '');
+        if (!num) {
+          console.warn('⚠️ Seat missing seat_number:', entry);
+          return;
+        }
+
+        // Get state - STRICT VALIDATION
+        let stateRaw = entry.state ?? entry.status ?? null;
+        let finalState: SeatState = 'AVAILABLE'; // Safe default
+
+        if (typeof stateRaw === 'string') {
+          const upper = stateRaw.toUpperCase();
+          const validStates: SeatState[] = ['AVAILABLE', 'BOOKED', 'LOCKED', 'DRIVER'];
+          
+          if (validStates.includes(upper as SeatState)) {
+            finalState = upper as SeatState;
+          } else {
+            console.warn(`⚠️ Invalid state "${stateRaw}" for seat ${num}, defaulting to AVAILABLE`);
+          }
+        } else if (stateRaw !== null) {
+          console.warn(`⚠️ Non-string state for seat ${num}:`, stateRaw);
+        }
+
+        // Store normalized seat
+        seatMap.set(num, {
+          seat_number: num,
+          state: finalState,
+          is_driver: entry.is_driver || finalState === 'DRIVER',
+          lock_expires_at: entry.lock_expires_at ?? null
+        });
+
+        // Debug log for non-available seats
+        if (finalState === 'BOOKED') {
+          console.log(`🔴 BOOKED seat parsed: ${num}`);
+        } else if (finalState === 'LOCKED') {
+          console.log(`🟡 LOCKED seat parsed: ${num}`);
+        } else if (finalState === 'DRIVER') {
+          console.log(`⚫ DRIVER seat parsed: ${num}`);
         }
       });
 
+      // Build organized seat array (1 to N)
       const organized: Seat[] = [];
       for (let i = 1; i <= totalSeatsFromResp; i++) {
         const seatNum = String(i);
@@ -95,55 +144,118 @@ export default function SeatMap({ scheduleId, price = 0, className = '', onBooke
         if (existing) {
           organized.push(existing);
         } else {
-          // If the API did not provide info for this seat we assume it's AVAILABLE (not BOOKED).
+          // Seat not in response = AVAILABLE (or missing)
+          console.warn(`⚠️ Seat ${seatNum} not in API response, defaulting to AVAILABLE`);
           organized.push({ seat_number: seatNum, state: 'AVAILABLE' } as Seat);
         }
       }
 
       setSeats(organized);
       
-      // Log state verification
-      console.log(`\n🎫 SEAT MAP LOADED ====================`);
-      console.log(`Schedule: ${scheduleId}`);
-      console.log(`Total seats: ${organized.length}`);
+      // Clear any selected seats that are now booked/locked
+      setSelected(prev => {
+        const newSelection: Record<string, boolean> = {};
+        let clearedCount = 0;
+        Object.keys(prev).forEach(seatNum => {
+          const seat = organized.find(s => s.seat_number === seatNum);
+          if (seat && seat.state === 'AVAILABLE' && prev[seatNum]) {
+            newSelection[seatNum] = true;
+          } else if (prev[seatNum]) {
+            clearedCount++;
+            console.log(`🔒 Seat ${seatNum} is no longer available - cleared from selection`);
+          }
+        });
+        if (clearedCount > 0) {
+          setToast({
+            message: `${clearedCount} seat${clearedCount > 1 ? 's' : ''} ${clearedCount > 1 ? 'were' : 'was'} booked by another user`,
+            type: 'info'
+          });
+          setTimeout(() => setToast(null), 4000);
+        }
+        return newSelection;
+      });
+      
+      // FINAL STATE VERIFICATION
+      console.log('\n🎫 === SEAT MAP LOADED ===');
+      console.log('Schedule:', scheduleId);
+      console.log('Total seats:', organized.length);
+      
       const availCount = organized.filter(s => s.state === 'AVAILABLE').length;
       const bookedCount = organized.filter(s => s.state === 'BOOKED').length;
       const lockedCount = organized.filter(s => s.state === 'LOCKED').length;
-      console.log(`Available: ${availCount}`);
-      console.log(`Booked: ${bookedCount} 🔴`);
-      console.log(`Locked: ${lockedCount} 🟡`);
+      const driverCount = organized.filter(s => s.state === 'DRIVER').length;
+      
+      console.log('State Distribution:');
+      console.log(`  🟢 AVAILABLE: ${availCount}`);
+      console.log(`  🔴 BOOKED:    ${bookedCount}`);
+      console.log(`  🟡 LOCKED:    ${lockedCount}`);
+      console.log(`  ⚫ DRIVER:    ${driverCount}`);
+      
       if (bookedCount > 0) {
-        const bookedSeats = organized.filter(s => s.state === 'BOOKED').map(s => s.seat_number).join(', ');
-        console.log(`Booked seats: ${bookedSeats}`);
+        const bookedSeats = organized
+          .filter(s => s.state === 'BOOKED')
+          .map(s => s.seat_number)
+          .sort((a, b) => parseInt(a) - parseInt(b))
+          .join(', ');
+        console.log(`  🔴 Booked seats: [${bookedSeats}]`);
       }
-      console.log(`======================================\n`);
+      
+      // Verify all states are valid
+      const invalidStates = organized.filter(s => 
+        !['AVAILABLE', 'BOOKED', 'LOCKED', 'DRIVER'].includes(s.state)
+      );
+      if (invalidStates.length > 0) {
+        console.error('❌ INVALID STATES DETECTED:', invalidStates);
+      }
+      
+      console.log('========================\n');
     } catch (err: any) {
-      console.error('fetchSeats error', err);
+      console.error('❌ fetchSeats error:', err);
       setError(err.message || 'Failed to load seats');
       
+      // Fallback: Show all seats as unavailable on error
       const fallback: Seat[] = [];
       for (let i = 1; i <= 29; i++) {
         fallback.push({ seat_number: String(i), state: 'BOOKED' } as Seat);
-      setRefreshing(false);
       }
       setSeats(fallback);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
   useEffect(() => {
     if (!scheduleId) return;
-    fetchSeats();
+    // Force immediate refresh on mount/schedule change
+    fetchSeats(false, true);
     
-    // Auto-refresh every 5 seconds for real-time updates
-    // This will automatically reflect any bookings made on the payment page
+    // Auto-refresh every 3 seconds for real-time updates
+    // This will automatically reflect any bookings made
     const intervalId = setInterval(() => {
       fetchSeats(true);
-    }, 5000);
+    }, 3000);
     
     return () => clearInterval(intervalId);
   }, [scheduleId, accessToken]);
+  
+  // Force refresh when returning from navigation (e.g., payment page)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        console.log('🔄 Tab became visible - refreshing seat map');
+        fetchSeats(false, true);
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', () => fetchSeats(false, true));
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', () => fetchSeats(false, true));
+    };
+  }, [scheduleId]);
 
   const toggleSelect = (seatNum: string, seatState: SeatState) => {
     console.log(`👆 Clicked seat ${seatNum} (state: ${seatState})`);
@@ -151,11 +263,31 @@ export default function SeatMap({ scheduleId, price = 0, className = '', onBooke
     // Prevent selecting driver seats
     if (seatState === 'DRIVER') {
       console.log(`⛔ Cannot select driver seat ${seatNum}`);
+      setToast({ message: 'Driver seat is not available for booking', type: 'error' });
+      setTimeout(() => setToast(null), 3000);
+      return;
+    }
+    
+    // Prevent selecting booked seats
+    if (seatState === 'BOOKED') {
+      console.log(`⛔ Cannot select seat ${seatNum} - Already booked`);
+      setToast({ message: `Seat ${seatNum} is already booked`, type: 'error' });
+      setTimeout(() => setToast(null), 3000);
+      return;
+    }
+    
+    // Prevent selecting locked seats
+    if (seatState === 'LOCKED') {
+      console.log(`⛔ Cannot select seat ${seatNum} - Temporarily locked`);
+      setToast({ message: `Seat ${seatNum} is temporarily reserved by another user`, type: 'info' });
+      setTimeout(() => setToast(null), 3000);
       return;
     }
     
     if (seatState !== 'AVAILABLE') {
       console.log(`⛔ Cannot select seat ${seatNum} - Status: ${seatState}`);
+      setToast({ message: `Seat ${seatNum} is not available`, type: 'error' });
+      setTimeout(() => setToast(null), 3000);
       return;
     }
     
@@ -285,8 +417,10 @@ export default function SeatMap({ scheduleId, price = 0, className = '', onBooke
           background: 'linear-gradient(135deg, #EF4444 0%, #DC2626 100%)',
           color: '#FFFFFF',
           cursor: 'not-allowed',
-          opacity: 0.7,
-          border: '2px solid #B91C1C'
+          opacity: 0.9,
+          border: '3px solid #B91C1C',
+          fontWeight: '800' as const,
+          position: 'relative' as const
         };
       }
       if (st === 'LOCKED') {
@@ -325,12 +459,13 @@ export default function SeatMap({ scheduleId, price = 0, className = '', onBooke
         disabled={st !== 'AVAILABLE'}
         aria-pressed={isSelected}
         aria-label={`Seat ${id} ${st.toLowerCase()}`}
+        aria-disabled={st !== 'AVAILABLE'}
         title={
           isDriver ? '🚫 Driver seat - Not available for booking' :
-          st === 'BOOKED' ? '🔴 Seat is booked - Not available' :
-          st === 'LOCKED' ? '🟡 Temporarily reserved by another user' :
-          isSelected ? '🔵 Click to deselect' :
-          '🟢 Click to select this seat'
+          st === 'BOOKED' ? '🔴 This seat is already booked and cannot be selected' :
+          st === 'LOCKED' ? '🟡 This seat is temporarily reserved by another user' :
+          isSelected ? '🔵 Selected - Click to deselect' :
+          '🟢 Available - Click to select this seat'
         }
         style={{
           ...getStyle(),
@@ -344,6 +479,7 @@ export default function SeatMap({ scheduleId, price = 0, className = '', onBooke
           fontSize: '13px',
           transition: 'all 0.2s ease'
         }}
+        className={st === 'BOOKED' ? 'animate-pulse-subtle' : ''}
         onMouseEnter={(e) => {
           if (st === 'AVAILABLE' && !isSelected) {
             e.currentTarget.style.transform = 'scale(1.1)';
@@ -357,7 +493,15 @@ export default function SeatMap({ scheduleId, price = 0, className = '', onBooke
           }
         }}
       >
-        {st === 'BOOKED' ? '✕' : id}
+        {st === 'BOOKED' ? (
+          <div className="flex flex-col items-center justify-center">
+            <span className="text-lg font-black">🔒</span>
+          </div>
+        ) : st === 'LOCKED' ? (
+          <span className="text-xs">⏳</span>
+        ) : (
+          id
+        )}
       </button>
     );
   };
@@ -591,6 +735,41 @@ export default function SeatMap({ scheduleId, price = 0, className = '', onBooke
               onClick={() => setError(null)}
               className="text-red-400 hover:text-red-600 transition-colors"
               aria-label="Dismiss error"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+      
+      {/* Toast Notifications */}
+      {toast && (
+        <div className={`mt-2.5 border-2 rounded-lg p-2.5 animate-in slide-in-from-top duration-300 ${
+          toast.type === 'error' 
+            ? 'bg-red-50 border-red-200' 
+            : 'bg-blue-50 border-blue-200'
+        }`}>
+          <div className="flex items-start gap-2">
+            <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${
+              toast.type === 'error' ? 'bg-red-500' : 'bg-blue-500'
+            }`}>
+              <span className="text-white text-xs font-bold">
+                {toast.type === 'error' ? '✕' : 'ℹ'}
+              </span>
+            </div>
+            <div className="flex-1">
+              <div className={`text-xs mt-0.5 ${
+                toast.type === 'error' ? 'text-red-700' : 'text-blue-700'
+              }`}>{toast.message}</div>
+            </div>
+            <button
+              onClick={() => setToast(null)}
+              className={`hover:opacity-70 transition-opacity ${
+                toast.type === 'error' ? 'text-red-400' : 'text-blue-400'
+              }`}
+              aria-label="Dismiss notification"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

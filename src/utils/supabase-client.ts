@@ -10,4 +10,4 @@ export const supabase = createSupabaseClient(
 );
 
 export const createClient = createSupabaseClient;
-export const API_URL = 'https://backend-7cxc.onrender.com/api';
+export const API_URL = import.meta.env.VITE_API_URL || '/api';

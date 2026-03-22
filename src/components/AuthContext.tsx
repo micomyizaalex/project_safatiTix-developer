@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
+import type { PlanPermissions, SubscriptionPlan } from '../utils/subscriptionPlans';
 
-type User = { id?: string; name?: string; companyId?: string; companyName?: string; role?: string; homePath?: string } | null;
+type User = { id?: string; name?: string; email?: string; phone?: string | null; companyId?: string; companyName?: string; role?: string; homePath?: string; avatar_url?: string | null; profile_image?: string | null; emailVerified?: boolean; companyVerified?: boolean; accountStatus?: string; subscriptionPlan?: SubscriptionPlan; planPermissions?: PlanPermissions } | null;
 
 interface AuthContextValue {
   user: User;
@@ -44,6 +45,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           if (mounted) {
             setUser(json.user || JSON.parse(stored));
             setAccessToken(token);
+            setLoading(false);
+          }
+          return;
+        }
+
+        if (res.status === 401 || res.status === 403) {
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          if (mounted) {
+            setUser(null);
+            setAccessToken(undefined);
             setLoading(false);
           }
           return;

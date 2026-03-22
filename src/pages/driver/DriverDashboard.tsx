@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Home, Bus, Calendar, Users, MapPin, Bell, User, LogOut, Menu, X,
   Clock, DollarSign, CheckCircle, Navigation, Scan, QrCode, ChevronRight,
@@ -7,42 +7,25 @@ import {
 } from 'lucide-react';
 import { BrowserQRCodeReader } from '@zxing/browser';
 import DriverTracking from '../../components/DriverTracking';
-
-// ==================== SAMPLE DATA ====================
-const driverData = {
-  name: 'John Kamau',
-  id: 'DRV-001',
-  rating: 4.8,
-  totalTrips: 156,
-  photo: null,
-};
-
-const todayStats = {
-  tripsCompleted: 2,
-  activeTrips: 1,
-  totalPassengers: 53,
-  revenue: 397500,
-};
-
-// Trips will be fetched from backend; no hardcoded mock trips
-
-const recentPassengers = [
-  { id: 1, name: 'Alice Nzabonimana', seat: '5', ticket: 'TKT-1245', checked: true, time: '07:45 AM' },
-  { id: 2, name: 'Peter Mugabe', seat: '8', ticket: 'TKT-1246', checked: true, time: '07:48 AM' },
-  { id: 3, name: 'Mary Uwase', seat: '12', ticket: 'TKT-1247', checked: false, time: null },
-  { id: 4, name: 'James Habimana', seat: '15', ticket: 'TKT-1248', checked: true, time: '07:52 AM' },
-  { id: 5, name: 'Grace Mukamana', seat: '18', ticket: 'TKT-1249', checked: false, time: null },
-];
+import { useNavigate as _useNavigate } from 'react-router-dom';
+import NotificationBell from '../../components/NotificationBell';
 
 // ==================== MAIN COMPONENT ====================
 import { useAuth } from '../../components/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 export default function DriverDashboard() {
+  const TRACKING_VIEW_KEY = 'driverDashboardActiveView';
+  const TRACKING_SCHEDULE_KEY = 'driverTrackingScheduleId';
   const { accessToken, user, signOut } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [activeView, setActiveView] = useState('dashboard');
+  const [activeView, setActiveView] = useState(() => {
+    if (location.pathname.endsWith('/my-trips')) return 'trips';
+    const persistedView = window.localStorage.getItem(TRACKING_VIEW_KEY);
+    return persistedView || 'dashboard';
+  });
   const [showScanner, setShowScanner] = useState(false);
   const [driverName, setDriverName] = useState(null);
   const [schedules, setSchedules] = useState([]);
@@ -51,12 +34,82 @@ export default function DriverDashboard() {
   const [trips, setTrips] = useState<any[]>([]);
   const [tripsLoading, setTripsLoading] = useState(false);
   const [tripsError, setTripsError] = useState<string | null>(null);
+  const [assignedBus, setAssignedBus] = useState<any | null>(null);
+  const [tripActionId, setTripActionId] = useState<string | null>(null);
   const [activeTrip, setActiveTrip] = useState<any | null>(null);
   const [upcomingTrips, setUpcomingTrips] = useState<any[]>([]);
   const [dashboardStats, setDashboardStats] = useState({ tripsCompleted: 0, activeTrips: 0, totalPassengers: 0, revenue: 0 });
-  const [recentPassengersState, setRecentPassengersState] = useState<any[]>(recentPassengers);
+  const [recentPassengersState, setRecentPassengersState] = useState<any[]>([]);
+  const [activeManifest, setActiveManifest] = useState<any | null>(null);
+  const [operationalStatuses, setOperationalStatuses] = useState<string[]>([]);
+  const [tripStatusUpdating, setTripStatusUpdating] = useState<string | null>(null);
   const [selectedScheduleForTracking, setSelectedScheduleForTracking] = useState<any | null>(null);
   const [sessionScannedTickets, setSessionScannedTickets] = useState<Set<string>>(new Set());
+
+  const refreshManifest = async (scheduleId: string) => {
+    if (!accessToken || !scheduleId) return;
+    const response = await fetch(`/api/driver/trips/${encodeURIComponent(scheduleId)}/passengers`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!response.ok) {
+      throw new Error('Failed to load passenger manifest');
+    }
+    const payload = await response.json();
+    setActiveManifest(payload);
+  };
+
+  const refreshDashboard = async () => {
+    if (!accessToken) return;
+    const res = await fetch(`/api/driver/dashboard`, { headers: { Authorization: `Bearer ${accessToken}` } });
+    if (!res.ok) return;
+    const j = await res.json();
+    const s = j.stats || {};
+    setDashboardStats({ tripsCompleted: s.completed || 0, activeTrips: s.active || 0, totalPassengers: s.passengers || 0, revenue: s.revenue || 0 });
+    setUpcomingTrips(j.upcoming || []);
+    setRecentPassengersState(j.recentCheckins || []);
+    setOperationalStatuses(j.operationalStatuses || []);
+    if (j.activeTrip) {
+      setActiveTrip(j.activeTrip);
+      setSelectedScheduleForTracking((currentSchedule: any | null) => currentSchedule || j.activeTrip);
+    }
+    setActiveManifest(j.manifest || null);
+  };
+
+  const loadTripsForBus = async (busId: string) => {
+    const response = await fetch(`/api/schedules?bus_id=${encodeURIComponent(busId)}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!response.ok) {
+      const txt = await response.text().catch(() => null);
+      throw new Error(txt || `Failed to load trips: ${response.status}`);
+    }
+
+    const payload = await response.json();
+    return Array.isArray(payload) ? payload : (payload.schedules || payload.trips || payload.data || []);
+  };
+
+  useEffect(() => {
+    if (location.pathname.endsWith('/my-trips')) {
+      setActiveView('trips');
+    } else if (location.pathname.endsWith('/driver')) {
+      const persistedView = window.localStorage.getItem(TRACKING_VIEW_KEY);
+      setActiveView(persistedView || 'dashboard');
+    }
+  }, [location.pathname]);
+
+  useEffect(() => {
+    window.localStorage.setItem(TRACKING_VIEW_KEY, activeView);
+  }, [activeView]);
+
+  useEffect(() => {
+    if (selectedScheduleForTracking?.id) {
+      window.localStorage.setItem(TRACKING_SCHEDULE_KEY, selectedScheduleForTracking.id);
+      return;
+    }
+
+    window.localStorage.removeItem(TRACKING_SCHEDULE_KEY);
+  }, [selectedScheduleForTracking]);
 
   useEffect(() => {
     if (!accessToken) return;
@@ -100,29 +153,63 @@ export default function DriverDashboard() {
       setTripsLoading(true);
       setTripsError(null);
       try {
-        const res = await fetch(`/api/driver/my-trips`, { headers: { Authorization: `Bearer ${accessToken}` } });
+        const busRes = await fetch(`/api/driver/bus`, { headers: { Authorization: `Bearer ${accessToken}` } });
+        if (!mounted) return;
+        if (!busRes.ok) {
+          const txt = await busRes.text().catch(() => null);
+          throw new Error(txt || `Failed to load assigned bus: ${busRes.status}`);
+        }
+
+        const busPayload = await busRes.json();
+        if (!mounted) return;
+        const bus = busPayload?.bus || null;
+        setAssignedBus(bus);
+
+        if (!bus?.id) {
+          setTrips([]);
+          setActiveTrip(null);
+          setUpcomingTrips([]);
+          return;
+        }
+
+        const res = await fetch('/api/driver/my-trips', {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
         if (!mounted) return;
         if (!res.ok) {
           const txt = await res.text().catch(() => null);
           throw new Error(txt || `Failed to load trips: ${res.status}`);
         }
+
         const j = await res.json();
         if (!mounted) return;
-        // expect { trips: [...] } or array directly
-        const loaded = Array.isArray(j) ? j : (j.trips || j.data || []);
+        let loaded = Array.isArray(j) ? j : (j.schedules || j.trips || j.data || []);
+
+        if ((!Array.isArray(loaded) || loaded.length === 0) && bus.id) {
+          loaded = await loadTripsForBus(bus.id);
+          if (!mounted) return;
+        }
+
         setTrips(loaded);
-        // compute active and upcoming trips for dashboard
+
         const act = loaded.find((t: any) => {
           const status = String(t.status || '').toUpperCase();
-          return status === 'ACTIVE' || status === 'IN_PROGRESS';
+          const operationalStatus = String(t.operationalStatus || '').toUpperCase();
+          return status === 'ACTIVE' || status === 'IN_PROGRESS' || ['BOARDING', 'DEPARTED', 'ON_ROUTE', 'ARRIVING'].includes(operationalStatus);
         }) || null;
-        setActiveTrip(act);
-        setUpcomingTrips(
-          loaded.filter((t: any) => {
+        setActiveTrip((currentTrip: any | null) => currentTrip || act);
+        setSelectedScheduleForTracking((currentSchedule: any | null) => {
+          const persistedScheduleId = window.localStorage.getItem(TRACKING_SCHEDULE_KEY);
+          const nextTrackedSchedule = loaded.find((trip: any) => trip.id === (currentSchedule?.id || persistedScheduleId))
+            || act
+            || null;
+          return nextTrackedSchedule;
+        });
+        setUpcomingTrips((currentTrips: any[]) => currentTrips.length > 0 ? currentTrips : loaded.filter((t: any) => {
             const status = String(t.status || '').toUpperCase();
-            return status !== 'ACTIVE' && status !== 'IN_PROGRESS';
-          })
-        );
+            const operationalStatus = String(t.operationalStatus || '').toUpperCase();
+            return status !== 'ACTIVE' && status !== 'IN_PROGRESS' && !['BOARDING', 'DEPARTED', 'ON_ROUTE', 'ARRIVING'].includes(operationalStatus);
+          }));
       } catch (err: any) {
         if (mounted) setTripsError(err.message || 'Failed to load trips');
       } finally {
@@ -135,14 +222,7 @@ export default function DriverDashboard() {
     // Load dashboard aggregates (stats, upcoming trips, recent check-ins)
     const loadDashboard = async () => {
       try {
-        const res = await fetch(`/api/driver/dashboard`, { headers: { Authorization: `Bearer ${accessToken}` } });
-        if (!res.ok) return;
-        const j = await res.json();
-        if (!mounted) return;
-        const s = j.stats || {};
-        setDashboardStats({ tripsCompleted: s.completed || 0, activeTrips: s.active || 0, totalPassengers: s.passengers || 0, revenue: s.revenue || 0 });
-        setUpcomingTrips(j.upcoming || []);
-        setRecentPassengersState(j.recentCheckins || []);
+        await refreshDashboard();
       } catch (e) {
         // ignore
       }
@@ -151,6 +231,88 @@ export default function DriverDashboard() {
     return () => { mounted = false; };
   }, [accessToken]);
 
+  useEffect(() => {
+    if (!accessToken || !activeTrip?.id) return;
+    if (activeManifest?.scheduleId === activeTrip.id || activeManifest?.trip?.id === activeTrip.id) return;
+    refreshManifest(activeTrip.id).catch(() => undefined);
+  }, [accessToken, activeTrip?.id]);
+
+  const handleTripStatusAction = async (trip: any, action: 'start' | 'end') => {
+    if (!accessToken || !trip?.id) return;
+
+    setTripActionId(trip.id);
+    setTripsError(null);
+
+    try {
+      const response = await fetch(action === 'start' ? '/api/driver/start-trip' : '/api/driver/end-trip', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ scheduleId: trip.id }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || data.message || `Failed to ${action} trip`);
+      }
+
+      const nextStatus = action === 'start' ? 'in_progress' : 'completed';
+      const updatedTrips = trips.map((currentTrip) => (
+        currentTrip.id === trip.id ? { ...currentTrip, status: nextStatus } : currentTrip
+      ));
+      const updatedTrip = updatedTrips.find((currentTrip) => currentTrip.id === trip.id) || { ...trip, status: nextStatus };
+
+      setTrips(updatedTrips);
+      setActiveTrip(updatedTrips.find((currentTrip) => String(currentTrip.status || '').toLowerCase() === 'in_progress') || null);
+      setUpcomingTrips(updatedTrips.filter((currentTrip) => String(currentTrip.status || '').toLowerCase() !== 'in_progress'));
+
+      if (action === 'start') {
+        setSelectedScheduleForTracking(updatedTrip);
+        navigate('/dashboard/driver');
+        setActiveView('tracking');
+      } else if (selectedScheduleForTracking?.id === trip.id) {
+        setSelectedScheduleForTracking(null);
+      }
+
+      await refreshDashboard();
+    } catch (error: any) {
+      setTripsError(error.message || `Failed to ${action} trip`);
+    } finally {
+      setTripActionId(null);
+    }
+  };
+
+  const handleOperationalStatusUpdate = async (trip: any, nextStatus: string) => {
+    if (!accessToken || !trip?.id || !nextStatus) return;
+    setTripStatusUpdating(nextStatus);
+    try {
+      const response = await fetch('/api/driver/trip-status', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ scheduleId: trip.id, operationalStatus: nextStatus }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || data.message || 'Failed to update trip status');
+      }
+
+      setActiveTrip((currentTrip: any) => currentTrip?.id === trip.id ? { ...currentTrip, operationalStatus: data.operationalStatus } : currentTrip);
+      setUpcomingTrips((currentTrips: any[]) => currentTrips.map((currentTrip) => currentTrip.id === trip.id ? { ...currentTrip, operationalStatus: data.operationalStatus } : currentTrip));
+      await refreshDashboard();
+      await refreshManifest(trip.id);
+    } catch (error: any) {
+      setTripsError(error.message || 'Failed to update trip status');
+    } finally {
+      setTripStatusUpdating(null);
+    }
+  };
+
   // Handle Start Trip button click
   const handleStartTrip = (schedule: any) => {
     if (!schedule || !schedule.id) {
@@ -158,6 +320,7 @@ export default function DriverDashboard() {
       return;
     }
     console.log('🚀 Starting trip for schedule:', schedule.id);
+    navigate('/dashboard/driver');
     setSelectedScheduleForTracking(schedule);
     setActiveView('tracking');
   };
@@ -165,6 +328,7 @@ export default function DriverDashboard() {
   // Refresh data after trip starts/ends
   const handleTripStarted = () => {
     console.log('✅ Trip started, refreshing data...');
+    setActiveView('tracking');
     // Reload schedules and trips
     window.location.reload(); // Simple refresh, or you can re-fetch data
   };
@@ -172,9 +336,31 @@ export default function DriverDashboard() {
   const handleTripEnded = () => {
     console.log('✅ Trip ended, refreshing data...');
     setSelectedScheduleForTracking(null);
+    window.localStorage.removeItem(TRACKING_SCHEDULE_KEY);
+    window.localStorage.setItem(TRACKING_VIEW_KEY, 'dashboard');
+    navigate('/dashboard/driver');
     setActiveView('dashboard');
     window.location.reload(); // Simple refresh, or you can re-fetch data
   };
+
+  const handleMenuSelect = (viewId: string) => {
+    if (viewId === 'dashboard') {
+      navigate('/dashboard/driver');
+    } else if (viewId === 'trips') {
+      navigate('/dashboard/driver/my-trips');
+    }
+
+    if (viewId === 'tracking' && !selectedScheduleForTracking && activeTrip) {
+      setSelectedScheduleForTracking(activeTrip);
+    }
+
+    setActiveView(viewId);
+    setSidebarOpen(false);
+  };
+
+  const displayDriverName = (driverContext as any)?.name || driverName || (user as any)?.full_name || (user as any)?.name || 'Driver';
+  const displayCompanyName = companyName || (user as any)?.companyName || 'No company assigned';
+  const displayTripCount = trips.length;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-50">
@@ -206,19 +392,19 @@ export default function DriverDashboard() {
                 <User className="w-6 h-6 text-white" />
               </div>
               <div className="flex-1 min-w-0">
-                <div className="font-bold text-white truncate">{(driverContext?.name || driverName || user?.full_name || driverData.name)}</div>
-                <div className="text-xs text-white/70">{(companyName || driverContext?.id || user?.companyName || driverData.id)}</div>
+                <div className="font-bold text-white truncate">{displayDriverName}</div>
+                <div className="text-xs text-white/70">{displayCompanyName}</div>
               </div>
             </div>
             <div className="flex items-center justify-between text-xs text-white/90">
               <div className="flex items-center gap-1">
                 <Star className="w-3 h-3 fill-yellow-300 text-yellow-300" />
-                <span className="font-bold">{driverData.rating}</span>
+                <span className="font-bold">--</span>
               </div>
               <div className="h-3 w-px bg-white/30"></div>
               <div className="flex items-center gap-1">
                 <Package className="w-3 h-3" />
-                <span className="font-bold">{driverData.totalTrips} trips</span>
+                <span className="font-bold">{displayTripCount} trips</span>
               </div>
             </div>
           </div>
@@ -235,7 +421,7 @@ export default function DriverDashboard() {
           ].map(item => (
             <button
               key={item.id}
-              onClick={() => { setActiveView(item.id); setSidebarOpen(false); }}
+              onClick={() => handleMenuSelect(item.id)}
               className={`
                 w-full flex items-center gap-3 px-3 py-2.5 rounded-lg
                 transition-all duration-200 text-sm font-semibold
@@ -280,10 +466,7 @@ export default function DriverDashboard() {
             </div>
             <span className="font-black text-slate-900">SafariTix</span>
           </div>
-          <button className="relative w-10 h-10 flex items-center justify-center rounded-lg hover:bg-slate-100">
-            <Bell className="w-5 h-5 text-slate-700" />
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full"></span>
-          </button>
+          <NotificationBell />
         </div>
       </header>
 
@@ -295,11 +478,11 @@ export default function DriverDashboard() {
       {/* ========== MAIN CONTENT ========== */}
       <main className="lg:ml-64 pt-16 lg:pt-0 min-h-screen">
         <div className="p-4 lg:p-6 xl:p-8">
-          {activeView === 'dashboard' && <DashboardView setShowScanner={setShowScanner} driverName={driverName} schedules={schedules} user={user} activeTrip={activeTrip} upcomingTrips={upcomingTrips} dashboardStats={dashboardStats} recentPassengers={recentPassengersState} onStartTrip={handleStartTrip} />}
-          {activeView === 'trips' && <TripsView trips={trips} loading={tripsLoading} error={tripsError} onStartTrip={handleStartTrip} />}
-          {activeView === 'passengers' && <PassengersView setShowScanner={setShowScanner} />}
-          {activeView === 'tracking' && <TrackingView schedule={selectedScheduleForTracking} onTripStarted={handleTripStarted} onTripEnded={handleTripEnded} />}
-          {activeView === 'profile' && <ProfileView />}
+          {activeView === 'dashboard' && <DashboardView setShowScanner={setShowScanner} driverName={driverName} schedules={schedules} user={user} activeTrip={activeTrip} upcomingTrips={upcomingTrips} dashboardStats={dashboardStats} recentPassengers={recentPassengersState} manifest={activeManifest} onStartTrip={handleStartTrip} onUpdateOperationalStatus={handleOperationalStatusUpdate} operationalStatuses={operationalStatuses} tripStatusUpdating={tripStatusUpdating} />}
+          {activeView === 'trips' && <TripsView trips={trips} loading={tripsLoading} error={tripsError} onTripAction={handleTripStatusAction} assignedBus={assignedBus} actionTripId={tripActionId} />}
+          {activeView === 'passengers' && <PassengersView setShowScanner={setShowScanner} manifest={activeManifest} activeTrip={activeTrip} />}
+          {activeView === 'tracking' && <TrackingView schedule={selectedScheduleForTracking || activeTrip} onTripStarted={handleTripStarted} onTripEnded={handleTripEnded} />}
+          {activeView === 'profile' && <ProfileView driverName={driverName} driverContext={driverContext} companyName={companyName} tripsCount={displayTripCount} />}
         </div>
       </main>
 
@@ -307,8 +490,15 @@ export default function DriverDashboard() {
       {showScanner && (
         <ScannerModal 
           onClose={() => setShowScanner(false)} 
+          scheduleId={activeTrip?.id || activeManifest?.scheduleId || activeManifest?.trip?.id || null}
           sessionScannedTickets={sessionScannedTickets}
           setSessionScannedTickets={setSessionScannedTickets}
+          onScanSuccess={() => {
+            refreshDashboard().catch(() => undefined);
+            if (activeTrip?.id) {
+              refreshManifest(activeTrip.id).catch(() => undefined);
+            }
+          }}
         />
       )}
     </div>
@@ -316,7 +506,30 @@ export default function DriverDashboard() {
 }
 
 // ==================== DASHBOARD VIEW ====================
-function DashboardView({ setShowScanner, driverName, schedules, user, activeTrip, upcomingTrips, dashboardStats, recentPassengers, onStartTrip }: { setShowScanner: any, driverName: any, schedules: any[], user: any, activeTrip: any, upcomingTrips: any[], dashboardStats: any, recentPassengers: any[], onStartTrip?: (schedule: any) => void }) {
+function DashboardView({ setShowScanner, driverName, schedules, user, activeTrip, upcomingTrips, dashboardStats, recentPassengers, manifest, onStartTrip, onUpdateOperationalStatus, operationalStatuses, tripStatusUpdating }: { setShowScanner: any, driverName: any, schedules: any[], user: any, activeTrip: any, upcomingTrips: any[], dashboardStats: any, recentPassengers: any[], manifest: any, onStartTrip?: (schedule: any) => void, onUpdateOperationalStatus?: (schedule: any, nextStatus: string) => void, operationalStatuses?: string[], tripStatusUpdating?: string | null }) {
+  const navigate = _useNavigate();
+  const activePassengers = manifest?.stats?.total ?? activeTrip?.passengers ?? 0;
+  const activeBoarded = manifest?.stats?.boarded ?? recentPassengers.filter((passenger) => passenger.checked).length;
+  const availableStatuses = Array.isArray(operationalStatuses) && operationalStatuses.length > 0 ? operationalStatuses : ['ASSIGNED', 'BOARDING', 'DEPARTED', 'ON_ROUTE', 'ARRIVING', 'COMPLETED'];
+  const currentOperationalStatus = String(activeTrip?.operationalStatus || activeTrip?.status || 'ASSIGNED').toUpperCase();
+  const tripStatusLabel = currentOperationalStatus.replace(/_/g, ' ');
+  const greetingName = ((driverName || user?.full_name || user?.name || 'Driver') + '').split(' ')[0];
+  const manifestRecentPassengers = Array.isArray(manifest?.checkedInPassengers)
+    ? manifest.checkedInPassengers.map((passenger: any) => ({
+        id: passenger.id,
+        bookingRef: passenger.bookingRef,
+        name: passenger.name,
+        seat: passenger.seatNumber,
+        checked: true,
+        status: passenger.bookingStatus || passenger.scanStatus || 'CHECKED_IN',
+        routeFrom: passenger.routeFrom,
+        routeTo: passenger.routeTo,
+        checkedAt: passenger.boardingTime,
+        busPlate: passenger.busPlate,
+        time: passenger.time,
+      }))
+    : [];
+  const recentCheckinList: any[] = manifestRecentPassengers.length > 0 ? manifestRecentPassengers : recentPassengers;
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       
@@ -324,7 +537,7 @@ function DashboardView({ setShowScanner, driverName, schedules, user, activeTrip
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
           <h1 className="text-2xl lg:text-3xl font-black text-slate-900 mb-1">
-            Good morning, {((driverName || user?.full_name || user?.name || driverData.name) + '').split(' ')[0]}! 👋
+            Good morning, {greetingName}! 👋
           </h1>
           <p className="text-slate-600">Here's your schedule for today</p>
           {schedules && schedules.length > 0 && (
@@ -348,7 +561,7 @@ function DashboardView({ setShowScanner, driverName, schedules, user, activeTrip
           )}
         </div>
         <button 
-          onClick={() => setShowScanner(true)}
+          onClick={() => navigate('/dashboard/driver/scanner')}
           className="w-full lg:w-auto bg-gradient-to-r from-[#0077B6] to-[#00A8E8] text-white px-6 py-3 rounded-xl font-bold shadow-lg hover:shadow-xl transition-all hover:-translate-y-0.5 flex items-center justify-center gap-2"
         >
           <Scan className="w-5 h-5" />
@@ -376,41 +589,60 @@ function DashboardView({ setShowScanner, driverName, schedules, user, activeTrip
               <div>
                 <div className="inline-flex items-center gap-2 bg-white/20 backdrop-blur px-3 py-1 rounded-full text-xs font-bold mb-3">
                   <Activity className="w-3 h-3 animate-pulse" />
-                  ACTIVE TRIP
+                  {tripStatusLabel}
                 </div>
                 <h2 className="text-2xl lg:text-3xl font-black mb-2">{activeTrip.route || (activeTrip.routeFrom && activeTrip.routeTo ? `${activeTrip.routeFrom} → ${activeTrip.routeTo}` : '')}</h2>
                 <p className="text-white/80 text-sm">{(activeTrip.bus && typeof activeTrip.bus === 'object') ? (activeTrip.bus.plateNumber || activeTrip.bus.plate_number || activeTrip.bus.id) : activeTrip.bus} • {activeTrip.departure || activeTrip.departureTime || '—'}</p>
               </div>
               <div className="text-right">
-                <div className="text-xs text-white/70 mb-1">ETA</div>
-                <div className="text-3xl font-black">{activeTrip.eta}</div>
+                <div className="text-xs text-white/70 mb-1">Boarded</div>
+                <div className="text-3xl font-black">{activeBoarded}/{activePassengers}</div>
               </div>
             </div>
 
-            {/* Progress Bar */}
-            <div className="mb-6">
-              <div className="flex items-center justify-between text-sm mb-2">
-                <span className="font-medium">Trip Progress</span>
-                <span className="font-bold">{activeTrip.progress}%</span>
+            <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <div className="bg-white/10 backdrop-blur rounded-xl p-4 border border-white/20">
+                <div className="text-xs text-white/70 mb-1">Manifest</div>
+                <div className="text-2xl font-black">{activePassengers}</div>
               </div>
-              <div className="h-2 bg-white/20 rounded-full overflow-hidden">
-                <div 
-                  className="h-full bg-white rounded-full transition-all duration-500"
-                  style={{ width: `${activeTrip.progress}%` }}
-                ></div>
+              <div className="bg-white/10 backdrop-blur rounded-xl p-4 border border-white/20">
+                <div className="text-xs text-white/70 mb-1">Booked</div>
+                <div className="text-2xl font-black">{manifest?.stats?.booked ?? Math.max(activePassengers - activeBoarded, 0)}</div>
+              </div>
+              <div className="bg-white/10 backdrop-blur rounded-xl p-4 border border-white/20">
+                <div className="text-xs text-white/70 mb-1">Departure</div>
+                <div className="text-lg font-black">{activeTrip.departureTime || activeTrip.departure || '—'}</div>
+              </div>
+              <div className="bg-white/10 backdrop-blur rounded-xl p-4 border border-white/20">
+                <div className="text-xs text-white/70 mb-1">Status</div>
+                <div className="text-lg font-black">{tripStatusLabel}</div>
               </div>
             </div>
 
             {/* Action Buttons */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="bg-white/10 backdrop-blur rounded-xl p-4 border border-white/20">
-                <div className="text-xs text-white/70 mb-1">Passengers</div>
-                <div className="text-2xl font-black">{activeTrip.passengers}/{activeTrip.totalSeats}</div>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+                {availableStatuses.filter((status) => status !== 'COMPLETED').map((status) => (
+                  <button
+                    key={status}
+                    onClick={() => onUpdateOperationalStatus?.(activeTrip, status)}
+                    disabled={tripStatusUpdating === status || currentOperationalStatus === status}
+                    className={`rounded-xl p-3 font-bold transition-all border ${currentOperationalStatus === status ? 'bg-white text-[#0077B6] border-white' : 'bg-white/10 text-white border-white/20 hover:bg-white/20'} disabled:opacity-70`}
+                  >
+                    {tripStatusUpdating === status ? 'Updating...' : status.replace(/_/g, ' ')}
+                  </button>
+                ))}
               </div>
-              <button className="bg-white text-[#0077B6] rounded-xl p-4 font-bold hover:bg-white/90 transition-all flex items-center justify-center gap-2">
-                <CheckCircle className="w-5 h-5" />
-                End Trip
-              </button>
+              <div className="grid grid-cols-2 gap-3">
+                <button onClick={() => setShowScanner(true)} className="bg-white/10 backdrop-blur rounded-xl p-4 border border-white/20 font-bold hover:bg-white/20 transition-all flex items-center justify-center gap-2">
+                  <Scan className="w-5 h-5" />
+                  Scan Ticket
+                </button>
+                <button onClick={() => navigate('/dashboard/driver/my-trips')} className="bg-white text-[#0077B6] rounded-xl p-4 font-bold hover:bg-white/90 transition-all flex items-center justify-center gap-2">
+                  <CheckCircle className="w-5 h-5" />
+                  Manage Trips
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -423,7 +655,7 @@ function DashboardView({ setShowScanner, driverName, schedules, user, activeTrip
         <div className="bg-white rounded-2xl border border-slate-200 p-6">
           <div className="flex items-center justify-between mb-5">
             <h3 className="text-lg font-black text-slate-900">Upcoming Trips</h3>
-            <button className="text-[#0077B6] font-bold text-sm hover:underline flex items-center gap-1">
+            <button onClick={() => navigate('/dashboard/driver/my-trips')} className="text-[#0077B6] font-bold text-sm hover:underline flex items-center gap-1">
               View All <ArrowRight className="w-4 h-4" />
             </button>
           </div>
@@ -436,7 +668,8 @@ function DashboardView({ setShowScanner, driverName, schedules, user, activeTrip
                     <div className="text-sm text-slate-500">{(trip.bus && typeof trip.bus === 'object') ? (trip.bus.plateNumber || trip.bus.plate_number || trip.bus.id) : (trip.bus || '—')}</div>
                   </div>
                   <div className="text-right">
-                    <div className="text-sm font-bold text-[#0077B6]">{trip.time}</div>
+                    <div className="text-sm font-bold text-[#0077B6]">{trip.departureTime || trip.time || '—'}</div>
+                    <div className="text-[11px] text-slate-500 mt-1">{String(trip.operationalStatus || trip.status || 'ASSIGNED').replace(/_/g, ' ')}</div>
                   </div>
                 </div>
                 <div className="flex items-center justify-between">
@@ -472,23 +705,51 @@ function DashboardView({ setShowScanner, driverName, schedules, user, activeTrip
               Scan <QrCode className="w-4 h-4" />
             </button>
           </div>
-          <div className="space-y-2">
-            {recentPassengers.slice(0, 5).map(passenger => (
-              <div key={passenger.id} className="flex items-center gap-3 p-3 rounded-lg hover:bg-slate-50 transition-colors">
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#0077B6] to-[#00A8E8] flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
-                  {passenger.name.split(' ').map((n: string) => n[0]).join('')}
+          <div className="space-y-3 max-h-[28rem] overflow-y-auto pr-1">
+            {recentCheckinList.map((passenger: any) => (
+              <div key={`${passenger.id}-${passenger.checkedAt || passenger.time || ''}`} className="rounded-xl border border-slate-100 p-4 hover:border-[#0077B6]/30 hover:bg-slate-50 transition-all">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#0077B6] to-[#00A8E8] flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                    {String(passenger.name || 'P').split(' ').map((n: string) => n[0]).join('')}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="font-semibold text-sm text-slate-900 truncate">{passenger.name}</div>
+                        <div className="text-xs text-slate-500 mt-1">Ticket {passenger.bookingRef || passenger.id}</div>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs font-bold text-green-700 bg-green-50 border border-green-200 rounded-full px-2.5 py-1">
+                        <CheckCircle className="w-4 h-4" />
+                        {passenger.status || 'CHECKED_IN'}
+                      </div>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-600">
+                      <div className="rounded-lg bg-slate-100 px-3 py-2">
+                        <div className="text-[11px] uppercase tracking-wide text-slate-400 mb-1">Seat</div>
+                        <div className="font-semibold text-slate-900">{passenger.seat || 'N/A'}</div>
+                      </div>
+                      <div className="rounded-lg bg-slate-100 px-3 py-2">
+                        <div className="text-[11px] uppercase tracking-wide text-slate-400 mb-1">Scanned</div>
+                        <div className="font-semibold text-slate-900">{passenger.time || '—'}</div>
+                      </div>
+                      <div className="rounded-lg bg-slate-100 px-3 py-2 col-span-2">
+                        <div className="text-[11px] uppercase tracking-wide text-slate-400 mb-1">Route</div>
+                        <div className="font-semibold text-slate-900">{passenger.routeFrom && passenger.routeTo ? `${passenger.routeFrom} → ${passenger.routeTo}` : 'Route unavailable'}</div>
+                      </div>
+                      <div className="rounded-lg bg-slate-100 px-3 py-2 col-span-2">
+                        <div className="text-[11px] uppercase tracking-wide text-slate-400 mb-1">Bus</div>
+                        <div className="font-semibold text-slate-900">{passenger.busPlate || 'Bus unavailable'}</div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-sm text-slate-900 truncate">{passenger.name}</div>
-                  <div className="text-xs text-slate-500">Seat {passenger.seat}</div>
-                </div>
-                {passenger.checked ? (
-                  <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
-                ) : (
-                  <div className="w-5 h-5 rounded-full border-2 border-slate-300 flex-shrink-0"></div>
-                )}
               </div>
             ))}
+            {recentCheckinList.length === 0 && (
+              <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">
+                No scanned passengers yet.
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -515,124 +776,255 @@ function StatCard({ icon: Icon, label, value, color }: { icon: any, label: strin
 }
 
 // ==================== TRIPS VIEW ====================
-function TripsView({ trips, loading, error, onStartTrip }: { trips?: any[], loading?: boolean, error?: string | null, onStartTrip?: (schedule: any) => void }) {
-  const list = (trips && trips.length > 0) ? trips : [];
+function TripsView({ trips, loading, error, onTripAction, assignedBus, actionTripId }: { trips?: any[], loading?: boolean, error?: string | null, onTripAction?: (trip: any, action: 'start' | 'end') => void, assignedBus?: any | null, actionTripId?: string | null }) {
+  const list = Array.isArray(trips) ? trips : [];
 
-  const renderEntry = (s: any) => {
-    // If schedule from backend
-    if (s.bus || s.routeFrom || s.departureTime) {
-      const route = s.routeFrom && s.routeTo ? `${s.routeFrom} → ${s.routeTo}` : (s.name || s.route || 'Schedule');
-      const bus = s.bus ? (s.bus.plateNumber || '') : (s.bus_registration || s.bus || '');
-      const departure = s.departureTime ? (new Date(s.departureTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })) : (s.time || '—');
-      const totalSeats = (s.totalSeats || (s.bus && s.bus.capacity)) || null;
-      const seatsAvailable = (typeof s.seatsAvailable === 'number' ? s.seatsAvailable : (s.available_seats !== undefined ? s.available_seats : null));
-      // Prefer explicit soldSeats from backend; fallback to passengers or compute from capacity - available
-      const passengers = (typeof s.soldSeats === 'number') ? s.soldSeats : (typeof s.passengers === 'number' ? s.passengers : ((totalSeats !== null && seatsAvailable !== null) ? (totalSeats - seatsAvailable) : null));
-      const occupancy = (totalSeats !== null && typeof passengers === 'number' && totalSeats > 0) ? Math.round((passengers / totalSeats) * 100) : null;
+  const normalizeDateTime = (trip: any) => {
+    const dateValue = trip.tripDate || trip.date || trip.scheduleDate;
+    const timeValue = trip.departureTime || trip.time || null;
+    if (!dateValue) return null;
+    const dateString = String(dateValue).slice(0, 10);
+    const timeString = timeValue ? String(timeValue).slice(0, 8) : '00:00:00';
+    const parsed = new Date(`${dateString}T${timeString}`);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  };
 
-      return (
-        <div key={s.id} className="bg-white rounded-2xl border border-slate-200 p-6 hover:shadow-lg transition-all">
-          <div className="flex items-start justify-between mb-4">
-            <div className="flex items-center gap-4">
-              <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-[#0077B6] to-[#00A8E8] flex items-center justify-center shadow-lg">
-                <Bus className="w-7 h-7 text-white" />
-              </div>
-              <div>
-                <div className="text-xl font-black text-slate-900 mb-1">{route}</div>
-                <div className="text-sm text-slate-600">{bus}</div>
-              </div>
-            </div>
-            <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-xs font-bold">{(s.status || s.status === undefined) ? (String(s.status).toUpperCase() || 'UPCOMING') : 'UPCOMING'}</span>
-          </div>
+  const getStatusMeta = (status: string | null | undefined) => {
+    const normalized = String(status || 'scheduled').toLowerCase();
+    if (normalized === 'in_progress') return { label: 'In Progress', badge: 'bg-blue-100 text-blue-700 border-blue-200' };
+    if (normalized === 'completed') return { label: 'Completed', badge: 'bg-emerald-100 text-emerald-700 border-emerald-200' };
+    return { label: 'Scheduled', badge: 'bg-slate-100 text-slate-700 border-slate-200' };
+  };
 
-          <div className="grid grid-cols-3 gap-4 mb-4">
-            <div className="text-center bg-slate-50 rounded-lg p-3">
-              <div className="text-xs text-slate-500 mb-1">Time</div>
-              <div className="font-bold text-slate-900">{departure}</div>
-            </div>
-            <div className="text-center bg-slate-50 rounded-lg p-3">
-              <div className="text-xs text-slate-500 mb-1">Passengers</div>
-              <div className="font-bold text-[#0077B6]">{(passengers !== null && passengers !== undefined) ? passengers : '—'}/{totalSeats || '—'}</div>
-            </div>
-            <div className="text-center bg-slate-50 rounded-lg p-3">
-              <div className="text-xs text-slate-500 mb-1">Occupancy</div>
-              <div className="font-bold text-slate-900">{occupancy !== null ? `${occupancy}%` : '—'}</div>
-            </div>
-          </div>
+  const sortedTrips = useMemo(() => {
+    const now = new Date();
+    return [...list].sort((left, right) => {
+      const leftDate = normalizeDateTime(left);
+      const rightDate = normalizeDateTime(right);
+      const leftUpcoming = leftDate ? leftDate.getTime() >= now.getTime() : false;
+      const rightUpcoming = rightDate ? rightDate.getTime() >= now.getTime() : false;
 
-          <button 
-            onClick={() => onStartTrip?.(s)}
-            className="w-full bg-gradient-to-r from-[#27AE60] to-[#229954] text-white py-3 rounded-xl font-bold hover:shadow-lg transition-all flex items-center justify-center gap-2"
-          >
-            <Navigation className="w-5 h-5" />
-            Start Trip
-          </button>
-        </div>
-      );
-    }
+      if (leftUpcoming !== rightUpcoming) {
+        return leftUpcoming ? -1 : 1;
+      }
 
-    // Fallback (legacy sample)
-    return (
-      <div key={s.id} className="bg-white rounded-2xl border border-slate-200 p-6 hover:shadow-lg transition-all">
-        <div className="flex items-start justify-between mb-4">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-[#0077B6] to-[#00A8E8] flex items-center justify-center shadow-lg">
-              <Bus className="w-7 h-7 text-white" />
-            </div>
-            <div>
-              <div className="text-xl font-black text-slate-900 mb-1">{s.route}</div>
-              <div className="text-sm text-slate-600">{s.bus}</div>
-            </div>
-          </div>
-          <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-xs font-bold">{s.status || 'UPCOMING'}</span>
-        </div>
+      if (leftDate && rightDate) {
+        return leftDate.getTime() - rightDate.getTime();
+      }
 
-        <div className="grid grid-cols-3 gap-4 mb-4">
-          <div className="text-center bg-slate-50 rounded-lg p-3">
-            <div className="text-xs text-slate-500 mb-1">Time</div>
-            <div className="font-bold text-slate-900">{s.time}</div>
-          </div>
-          <div className="text-center bg-slate-50 rounded-lg p-3">
-            <div className="text-xs text-slate-500 mb-1">Passengers</div>
-            <div className="font-bold text-[#0077B6]">{s.passengers}/{s.total}</div>
-          </div>
-          <div className="text-center bg-slate-50 rounded-lg p-3">
-            <div className="text-xs text-slate-500 mb-1">Occupancy</div>
-            <div className="font-bold text-slate-900">{Math.round((s.passengers / s.total) * 100)}%</div>
-          </div>
-        </div>
+      if (leftDate) return -1;
+      if (rightDate) return 1;
+      return 0;
+    });
+  }, [list]);
 
-        <button 
-          onClick={() => onStartTrip?.(s)}
-          className="w-full bg-gradient-to-r from-[#27AE60] to-[#229954] text-white py-3 rounded-xl font-bold hover:shadow-lg transition-all flex items-center justify-center gap-2"
-        >
-          <Navigation className="w-5 h-5" />
-          Start Trip
-        </button>
-      </div>
-    );
+  const formatDate = (value: string | null | undefined) => {
+    if (!value) return '—';
+    const parsed = new Date(String(value));
+    return Number.isNaN(parsed.getTime())
+      ? String(value)
+      : parsed.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+  };
+
+  const formatTime = (value: string | null | undefined) => {
+    if (!value) return '—';
+    const base = String(value);
+    const parsed = new Date(`1970-01-01T${base.slice(0, 8)}`);
+    return Number.isNaN(parsed.getTime())
+      ? base.slice(0, 5)
+      : parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl lg:text-3xl font-black text-slate-900">My Trips</h1>
-        <button className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-4 py-2 hover:border-[#0077B6] transition-all text-sm font-semibold">
-          <Calendar className="w-4 h-4" />
-          Filter
-        </button>
+        <div className="text-sm text-slate-500 font-medium">Assigned schedules sorted by nearest upcoming trip</div>
       </div>
 
-      <div className="space-y-4">
-        {list.map(item => renderEntry(item))}
-      </div>
+      {loading && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-10 flex items-center justify-center gap-3 text-slate-600">
+          <Activity className="w-5 h-5 animate-pulse text-[#0077B6]" />
+          Loading assigned trips...
+        </div>
+      )}
+
+      {!loading && error && (
+        <div className="bg-red-50 border border-red-200 rounded-2xl p-5 text-red-700 font-medium">
+          {error}
+        </div>
+      )}
+
+      {!loading && !error && !assignedBus && (
+        <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-12 text-center">
+          <Bus className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+          <h2 className="text-xl font-black text-slate-900 mb-2">No bus assigned to you yet.</h2>
+          <p className="text-slate-500">Once a bus is assigned to your driver account, its scheduled trips will appear here.</p>
+        </div>
+      )}
+
+      {!loading && !error && assignedBus && sortedTrips.length === 0 && (
+        <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-12 text-center">
+          <Calendar className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+          <h2 className="text-xl font-black text-slate-900 mb-2">No trips scheduled for your bus yet.</h2>
+          <p className="text-slate-500">Bus {assignedBus.plate_number || assignedBus.plateNumber || assignedBus.id} does not have any schedules yet.</p>
+        </div>
+      )}
+
+      {!loading && !error && assignedBus && sortedTrips.length > 0 && (
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {sortedTrips.map((trip) => {
+            const status = getStatusMeta(trip.status);
+            const routeName = trip.routeName || (trip.routeFrom && trip.routeTo ? `${trip.routeFrom} → ${trip.routeTo}` : 'Unknown Route');
+            const busLabel = trip.busPlateNumber || trip.bus?.plateNumber || trip.busName || trip.bus?.model || '—';
+            const capacity = trip.seatCapacity || trip.totalSeats || trip.bus?.capacity || '—';
+            const normalizedStatus = String(trip.status || '').toLowerCase();
+            const isActioning = actionTripId === trip.id;
+
+            return (
+              <div key={trip.id} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:shadow-lg transition-all">
+                <div className="flex items-start justify-between gap-3 mb-4">
+                  <div>
+                    <div className="text-lg font-black text-slate-900">{routeName}</div>
+                    <div className="text-sm text-slate-500 mt-1">Bus: {busLabel}</div>
+                  </div>
+                  <span className={`px-3 py-1 rounded-full border text-xs font-bold whitespace-nowrap ${status.badge}`}>
+                    {status.label}
+                  </span>
+                </div>
+
+                <div className="space-y-3 text-sm">
+                  <div className="grid grid-cols-2 gap-3">
+                    <TripInfo label="Departure" value={trip.departureLocation || trip.routeFrom || '—'} />
+                    <TripInfo label="Destination" value={trip.destination || trip.routeTo || '—'} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <TripInfo label="Departure Time" value={formatTime(trip.departureTime)} />
+                    <TripInfo label="Trip Date" value={formatDate(trip.tripDate || trip.date)} />
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <TripInfo label="Seat Capacity" value={String(capacity)} />
+                    <TripInfo label="Status" value={status.label} />
+                  </div>
+                </div>
+
+                {normalizedStatus === 'scheduled' && (
+                  <button
+                    onClick={() => onTripAction?.(trip, 'start')}
+                    disabled={isActioning}
+                    className="mt-5 w-full bg-gradient-to-r from-[#0077B6] to-[#005F8E] text-white py-3 rounded-xl font-bold hover:shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    <Navigation className="w-5 h-5" />
+                    {isActioning ? 'Starting...' : 'Start Trip'}
+                  </button>
+                )}
+
+                {normalizedStatus === 'in_progress' && (
+                  <button
+                    onClick={() => onTripAction?.(trip, 'end')}
+                    disabled={isActioning}
+                    className="mt-5 w-full bg-gradient-to-r from-[#27AE60] to-[#229954] text-white py-3 rounded-xl font-bold hover:shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    <CheckCircle className="w-5 h-5" />
+                    {isActioning ? 'Ending...' : 'End Trip'}
+                  </button>
+                )}
+
+                {normalizedStatus === 'completed' && (
+                  <button
+                    disabled
+                    className="mt-5 w-full bg-slate-200 text-slate-500 py-3 rounded-xl font-bold cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    <CheckCircle className="w-5 h-5" />
+                    Trip Completed
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
 
+function TripInfo({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-3">
+      <div className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-1">{label}</div>
+      <div className="font-bold text-slate-900">{value}</div>
+    </div>
+  );
+}
 // ==================== PASSENGERS VIEW ====================
-function PassengersView({ setShowScanner }: { setShowScanner: (show: boolean) => void }) {
+function PassengersView({ setShowScanner, manifest, activeTrip }: { setShowScanner: (show: boolean) => void, manifest: any, activeTrip: any }) {
   const [search, setSearch] = useState('');
+  const navigate = _useNavigate();
+  const checkedInPassengers = Array.isArray(manifest?.checkedInPassengers) ? manifest.checkedInPassengers : [];
+  const pendingPassengers = Array.isArray(manifest?.pendingPassengers) ? manifest.pendingPassengers : [];
+  const passengers = Array.isArray(manifest?.passengers) ? manifest.passengers : [];
+
+  const matchesSearch = (passenger: any) => {
+    const query = search.trim().toLowerCase();
+    if (!query) return true;
+    return [passenger.name, passenger.bookingRef, passenger.seatNumber, passenger.ticketStatus]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(query));
+  };
+
+  const filteredCheckedInPassengers = checkedInPassengers.filter(matchesSearch);
+  const filteredPendingPassengers = pendingPassengers.filter(matchesSearch);
+  const hasManifestSections = checkedInPassengers.length > 0 || pendingPassengers.length > 0;
+
+  const formatBoardingTime = (value: string | null | undefined) => {
+    if (!value) return null;
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime())
+      ? value
+      : parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  const PassengerCard = ({ passenger, boarded }: { passenger: any; boarded: boolean }) => (
+    <div key={passenger.id} className="bg-white rounded-xl border border-slate-200 p-5 hover:shadow-lg transition-all">
+      <div className="flex items-center gap-4 mb-4">
+        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#0077B6] to-[#00A8E8] flex items-center justify-center text-white font-bold">
+          {String(passenger.name || 'P').split(' ').map((n: string) => n[0]).join('')}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="font-bold text-slate-900 truncate">{passenger.name}</div>
+          <div className="text-sm text-slate-600 truncate">{passenger.bookingRef || passenger.ticketId}</div>
+        </div>
+        {boarded ? (
+          <div className="bg-green-100 text-green-700 px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2">
+            <CheckCircle className="w-4 h-4" />
+            Boarded
+          </div>
+        ) : (
+          <button onClick={() => setShowScanner(true)} className="bg-[#0077B6] text-white px-6 py-2 rounded-lg font-bold hover:bg-[#005F8E] transition-all">
+            Check In
+          </button>
+        )}
+      </div>
+      <div className="grid gap-3 text-sm text-slate-600 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-3">
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-1">Seat</div>
+          <div className="font-bold text-slate-900">#{passenger.seatNumber || 'N/A'}</div>
+        </div>
+        <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-3">
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-1">Status</div>
+          <div className="font-bold text-slate-900">{passenger.ticketStatus || 'BOOKED'}</div>
+        </div>
+        <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-3 sm:col-span-2 xl:col-span-1">
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-1">Scan Time</div>
+          <div className="font-bold text-slate-900">{passenger.time || formatBoardingTime(passenger.boardingTime) || 'Not scanned'}</div>
+        </div>
+        <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-3 sm:col-span-2 xl:col-span-1">
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-1">Bus</div>
+          <div className="font-bold text-slate-900">{passenger.busPlate || manifest?.meta?.busPlate || 'Bus unavailable'}</div>
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
@@ -647,6 +1039,15 @@ function PassengersView({ setShowScanner }: { setShowScanner: (show: boolean) =>
         </button>
       </div>
 
+      <div className="bg-white rounded-2xl border border-slate-200 p-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <div className="text-sm font-semibold text-slate-500">Assigned Trip</div>
+          <div className="text-xl font-black text-slate-900">{activeTrip?.route || (activeTrip?.routeFrom && activeTrip?.routeTo ? `${activeTrip.routeFrom} → ${activeTrip.routeTo}` : 'No active trip')}</div>
+          <div className="text-sm text-slate-500">{String(activeTrip?.operationalStatus || activeTrip?.status || 'ASSIGNED').replace(/_/g, ' ')} • {manifest?.stats?.boarded || 0}/{manifest?.stats?.total || 0} boarded</div>
+        </div>
+        <button onClick={() => navigate('/dashboard/driver/my-trips')} className="text-[#0077B6] font-bold text-sm hover:underline">View all trips</button>
+      </div>
+
       {/* Search */}
       <div className="bg-white rounded-xl border-2 border-slate-200 focus-within:border-[#0077B6] transition-all p-3 flex items-center gap-3">
         <Search className="w-5 h-5 text-slate-400" />
@@ -659,43 +1060,43 @@ function PassengersView({ setShowScanner }: { setShowScanner: (show: boolean) =>
         />
       </div>
 
-      {/* Passenger List */}
-      <div className="space-y-3">
-        {recentPassengers.map(passenger => (
-          <div key={passenger.id} className="bg-white rounded-xl border border-slate-200 p-5 hover:shadow-lg transition-all">
-            <div className="flex items-center gap-4 mb-4">
-              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#0077B6] to-[#00A8E8] flex items-center justify-center text-white font-bold">
-                {passenger.name.split(' ').map(n => n[0]).join('')}
-              </div>
-              <div className="flex-1">
-                <div className="font-bold text-slate-900">{passenger.name}</div>
-                <div className="text-sm text-slate-600">{passenger.ticket}</div>
-              </div>
-              {passenger.checked ? (
-                <div className="bg-green-100 text-green-700 px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4" />
-                  Checked
-                </div>
-              ) : (
-                <button className="bg-[#0077B6] text-white px-6 py-2 rounded-lg font-bold hover:bg-[#005F8E] transition-all">
-                  Check In
-                </button>
-              )}
-            </div>
-            <div className="flex items-center gap-4 text-sm text-slate-600">
-              <span className="flex items-center gap-1">
-                <strong className="text-slate-900">Seat:</strong> #{passenger.seat}
-              </span>
-              {passenger.time && (
-                <span className="flex items-center gap-1">
-                  <Clock className="w-4 h-4" />
-                  {passenger.time}
-                </span>
-              )}
-            </div>
+      <div className="grid gap-6 xl:grid-cols-2">
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-black text-slate-900">Checked-in Passengers</h2>
+            <span className="text-sm font-semibold text-green-700 bg-green-50 border border-green-200 rounded-full px-3 py-1">
+              {filteredCheckedInPassengers.length}
+            </span>
           </div>
-        ))}
+          {filteredCheckedInPassengers.map((passenger: any) => <PassengerCard key={passenger.id} passenger={passenger} boarded />)}
+          {filteredCheckedInPassengers.length === 0 && (
+            <div className="bg-white rounded-xl border border-dashed border-slate-300 p-10 text-center text-slate-500">
+              No passengers have boarded for this trip yet.
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-black text-slate-900">Passengers Not Yet Boarded</h2>
+            <span className="text-sm font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-3 py-1">
+              {filteredPendingPassengers.length}
+            </span>
+          </div>
+          {filteredPendingPassengers.map((passenger: any) => <PassengerCard key={passenger.id} passenger={passenger} boarded={false} />)}
+          {filteredPendingPassengers.length === 0 && (
+            <div className="bg-white rounded-xl border border-dashed border-slate-300 p-10 text-center text-slate-500">
+              Everyone booked for this trip has already been scanned.
+            </div>
+          )}
+        </div>
       </div>
+
+      {!hasManifestSections && passengers.length === 0 && (
+        <div className="bg-white rounded-xl border border-dashed border-slate-300 p-10 text-center text-slate-500">
+          No passengers found for this trip yet.
+        </div>
+      )}
     </div>
   );
 }
@@ -742,7 +1143,14 @@ function TrackingView({ schedule, onTripStarted, onTripEnded }: { schedule: any 
 }
 
 // ==================== PROFILE VIEW ====================
-function ProfileView() {
+function ProfileView({ driverName, driverContext, companyName, tripsCount }: { driverName: string | null, driverContext: any, companyName: string | null, tripsCount: number }) {
+  const { user } = useAuth();
+  const contactItems = [
+    { icon: Phone, label: 'Phone', value: (user as any)?.phone_number || driverContext?.phone || 'Not available' },
+    { icon: Mail, label: 'Email', value: (user as any)?.email || driverContext?.email || 'Not available' },
+    { icon: MapPin, label: 'Location', value: 'Not available' },
+  ];
+
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <h1 className="text-2xl lg:text-3xl font-black text-slate-900">Profile</h1>
@@ -754,8 +1162,8 @@ function ProfileView() {
             <User className="w-10 h-10 text-white" />
           </div>
           <div className="flex-1">
-            <div className="text-2xl font-black mb-1">{(driverContext?.name || driverName || user?.full_name || driverData.name)}</div>
-            <div className="text-white/80 text-sm">{(companyName || driverContext?.id || user?.companyName || driverData.id)}</div>
+            <div className="text-2xl font-black mb-1">{driverContext?.name || driverName || (user as any)?.full_name || (user as any)?.name || 'Driver'}</div>
+            <div className="text-white/80 text-sm">{companyName || (user as any)?.companyName || 'No company assigned'}</div>
           </div>
           <button className="bg-white/20 border-2 border-white/30 text-white px-6 py-2 rounded-lg font-bold hover:bg-white/30 transition-all">
             Edit
@@ -767,17 +1175,17 @@ function ProfileView() {
       <div className="grid lg:grid-cols-3 gap-4">
         <div className="bg-white rounded-xl border border-slate-200 p-5 text-center">
           <Star className="w-8 h-8 text-yellow-500 mx-auto mb-2" />
-          <div className="text-2xl font-black text-slate-900">{driverData.rating}</div>
+          <div className="text-2xl font-black text-slate-900">--</div>
           <div className="text-sm text-slate-600">Rating</div>
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-5 text-center">
           <Package className="w-8 h-8 text-[#0077B6] mx-auto mb-2" />
-          <div className="text-2xl font-black text-slate-900">{driverData.totalTrips}</div>
+          <div className="text-2xl font-black text-slate-900">{tripsCount}</div>
           <div className="text-sm text-slate-600">Total Trips</div>
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-5 text-center">
           <Award className="w-8 h-8 text-green-600 mx-auto mb-2" />
-          <div className="text-2xl font-black text-slate-900">98%</div>
+          <div className="text-2xl font-black text-slate-900">--</div>
           <div className="text-sm text-slate-600">On-Time Rate</div>
         </div>
       </div>
@@ -786,11 +1194,7 @@ function ProfileView() {
       <div className="bg-white rounded-2xl border border-slate-200 p-6">
         <h3 className="text-lg font-black text-slate-900 mb-4">Contact Information</h3>
         <div className="space-y-3">
-          {[
-            { icon: Phone, label: 'Phone', value: '+250 788 123 456' },
-            { icon: Mail, label: 'Email', value: 'john.kamau@safaritix.com' },
-            { icon: MapPin, label: 'Location', value: 'Kigali, Rwanda' },
-          ].map((item, idx) => (
+          {contactItems.map((item, idx) => (
             <div key={idx} className="flex items-center gap-4 p-4 bg-slate-50 rounded-lg">
               <div className="w-10 h-10 rounded-lg bg-[#0077B6]/10 flex items-center justify-center">
                 <item.icon className="w-5 h-5 text-[#0077B6]" />
@@ -810,12 +1214,16 @@ function ProfileView() {
 // ==================== SCANNER MODAL ====================
 function ScannerModal({ 
   onClose, 
+  scheduleId,
   sessionScannedTickets, 
-  setSessionScannedTickets 
+  setSessionScannedTickets,
+  onScanSuccess,
 }: { 
   onClose: () => void,
+  scheduleId: string | null,
   sessionScannedTickets: Set<string>,
-  setSessionScannedTickets: React.Dispatch<React.SetStateAction<Set<string>>>
+  setSessionScannedTickets: React.Dispatch<React.SetStateAction<Set<string>>>,
+  onScanSuccess?: () => void,
 }) {
   const { accessToken } = useAuth();
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -850,22 +1258,15 @@ function ScannerModal({
 
     try {
       const videoInputDevices = await BrowserQRCodeReader.listVideoInputDevices();
-      
-      if (videoInputDevices.length === 0) {
-        setError('No camera found on this device');
-        setScanning(false);
-        return;
-      }
 
-      // Use the first camera (or back camera if available)
-      const backCamera = videoInputDevices.find((d) =>
-        /back|rear|environment/i.test(d.label || '')
-      );
-      const selectedDeviceId = backCamera?.deviceId || videoInputDevices[0]?.deviceId;
-      if (!selectedDeviceId) {
-        setError('Could not determine a camera device id');
-        setScanning(false);
-        return;
+      // Some browsers do not expose stable device IDs until permission is granted.
+      // In that case, pass undefined and let ZXing use the default/environment camera.
+      let selectedDeviceId: string | undefined;
+      if (videoInputDevices.length > 0) {
+        const backCamera = videoInputDevices.find((d) =>
+          /back|rear|environment/i.test(d.label || '')
+        );
+        selectedDeviceId = backCamera?.deviceId || videoInputDevices[0]?.deviceId || undefined;
       }
 
       if (readerRef.current && videoRef.current) {
@@ -949,7 +1350,7 @@ function ScannerModal({
           'Content-Type': 'application/json',
           Authorization: `Bearer ${accessToken}`,
         },
-        body: JSON.stringify({ qrCode }),
+        body: JSON.stringify({ qrCode, scheduleId }),
       });
 
       const data = await response.json();
@@ -975,6 +1376,7 @@ function ScannerModal({
           ticket: data.ticket,
           passenger: data.passenger,
         });
+        onScanSuccess?.();
       } else {
         // FAILURE: Invalid ticket from backend
         console.log('❌ Invalid ticket:', data.reason);
@@ -1089,6 +1491,12 @@ function ScannerModal({
                           <div className="flex items-center justify-between text-sm">
                             <span className="text-slate-600">Phone</span>
                             <span className="font-semibold text-slate-900">{scanResult.passenger.phone}</span>
+                          </div>
+                        )}
+                        {scanResult.passenger?.boardingStatus && (
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-slate-600">Boarding</span>
+                            <span className="font-semibold text-green-700">{scanResult.passenger.boardingStatus}</span>
                           </div>
                         )}
                         {scanResult.ticket?.bookingRef && (

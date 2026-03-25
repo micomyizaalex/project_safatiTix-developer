@@ -29,6 +29,8 @@ import AccountSettings from './pages/account/AccountSettings';
 import PaymentPage from './pages/commuter/PaymentPage';
 import SeatMapPage from './pages/commuter/SeatMapPage';
 import SearchBusPage from './pages/commuter/SearchBusPage';
+import BookingSuccessPage from './pages/commuter/BookingSuccessPage';
+import TrackBusPage from './pages/commuter/TrackBusPage';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import VerifyEmail from './pages/VerifyEmail';
@@ -72,6 +74,8 @@ const App = () => {
                 <Route path='search-bus' element={<SearchBusPage/>} />
                 <Route path='seatmap' element={<SeatMapPage/>} />
                 <Route path='payment' element={<PaymentPage/>} />
+                <Route path='booking-success' element={<BookingSuccessPage/>} />
+                <Route path='track-bus/:bookingId' element={<TrackBusPage/>} />
               </Route>
 
               {/* Account settings page */}
@@ -96,6 +100,7 @@ const App = () => {
             <Route path='/commuter/search-bus' element={<RequireRole allowed={["commuter"]}><SearchBusPage/></RequireRole>} />
             <Route path='/commuter/bookings' element={<RequireRole allowed={["commuter"]}><CommuterDashboard/></RequireRole>} />
             <Route path='/commuter/seat-map' element={<RequireRole allowed={["commuter"]}><SeatMapPage/></RequireRole>} />
+            <Route path='/track-bus/:bookingId' element={<RequireRole allowed={["commuter"]}><TrackBusPage/></RequireRole>} />
             <Route path='/admin/company-verifications' element={<Navigate to='/dashboard/admin/company-verifications' replace />} />
 
             {/* Alias dashboard routes */}

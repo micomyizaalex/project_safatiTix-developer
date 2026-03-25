@@ -249,8 +249,11 @@ export default function CommuterDashboard() {
   }, [bookings]);
 
   const handleTrackBus = (booking: BookingRecord) => {
-    setSelectedTrackingBooking(booking);
-    document.getElementById('track-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    navigate(`/track-bus/${booking.id}`, {
+      state: {
+        booking,
+      },
+    });
   };
 
   const goToSearch = () => {

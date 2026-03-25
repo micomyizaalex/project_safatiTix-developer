@@ -205,6 +205,9 @@ export default function PaymentPage() {
   const POLL_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
   const totalAmount = selectedSeats.length * pricePerSeat;
+  // Demo mode: always treat payment as successful immediately after booking-hold.
+  // This skips provider initiation + polling and instead calls the backend demo-confirm endpoint.
+  const DEMO_MODE = true;
 
   useEffect(() => {
     // Redirect if no booking data
@@ -512,20 +515,8 @@ export default function PaymentPage() {
     setStatusMessage(null);
 
     try {
-      const phoneOrCard = paymentMethod === 'card_payment' ? cardNumber : phoneNumber;
-      if (!phoneOrCard?.trim()) {
-        throw new Error(paymentMethod === 'card_payment' ? 'Card number is required.' : 'Phone number is required.');
-      }
-
-      const normalizedPhone = paymentMethod === 'card_payment'
-        ? ''
-        : normalizeRwandaPhoneInput(phoneNumber);
-
-      if (paymentMethod !== 'card_payment' && !isValidRwandaPhone(normalizedPhone)) {
-        throw new Error('Enter a valid Rwanda phone number (07XXXXXXXX or 2507XXXXXXXX).');
-      }
-
       // 1) Create booking hold (seat lock only, no ticket creation yet).
+      // In DEMO mode we don't require phone/card validation.
       const holdResponse = await fetch(`${API_URL}/payments/booking-hold`, {
         method: 'POST',
         headers: getHeaders(),
@@ -553,6 +544,66 @@ export default function PaymentPage() {
       setActiveBookingId(bookingId);
       activeBookingRef.current = bookingId;
       setBookingExpiresAt(holdData?.booking?.expires_at || null);
+
+      if (DEMO_MODE) {
+        // 2) Demo confirm: finalize booking immediately (no provider).
+        setStatusMessage('Confirming your booking...');
+        const demoResponse = await fetch(`${API_URL}/payments/demo-confirm`, {
+          method: 'POST',
+          headers: getHeaders(),
+          body: JSON.stringify({ bookingId }),
+        });
+
+        const demoData = await demoResponse.json().catch(() => ({}));
+        if (!demoResponse.ok) {
+          throw new Error(demoData?.message || demoData?.error || 'Failed to confirm booking.');
+        }
+
+        // Prevent cancel-on-unmount logic from releasing the hold.
+        paymentCompletedRef.current = true;
+        paymentInitiatedRef.current = false;
+        activeBookingRef.current = null;
+        setActiveBookingId(null);
+        setBookingExpiresAt(null);
+        clearPolling();
+
+        const returnedTickets = Array.isArray(demoData?.tickets) ? demoData.tickets : [];
+        setCreatedTickets(
+          returnedTickets.map((t: any) => ({
+            ticketId: t.ticketId || t.id || '',
+            bookingRef: t.bookingRef || t.booking_ref || '',
+            qrCodeUrl: t.qrCodeUrl || t.qr_code_url || undefined,
+          }))
+        );
+
+        setSuccess(true);
+        setProcessing(false);
+        setStatusMessage(null);
+        setError(null);
+
+        navigate('/dashboard/commuter/booking-success', {
+          state: {
+            booking: demoData?.booking,
+            tickets: returnedTickets,
+            qrCodeUrl: demoData?.qrCodeUrl || returnedTickets?.[0]?.qr_code_url || null,
+          },
+        });
+        return;
+      }
+
+      // Non-demo (legacy) behavior: provider initiate + poll.
+      const phoneOrCard = paymentMethod === 'card_payment' ? cardNumber : phoneNumber;
+      if (!phoneOrCard?.trim()) {
+        throw new Error(paymentMethod === 'card_payment' ? 'Card number is required.' : 'Phone number is required.');
+      }
+
+      const normalizedPhone = paymentMethod === 'card_payment'
+        ? ''
+        : normalizeRwandaPhoneInput(phoneNumber);
+
+      if (paymentMethod !== 'card_payment' && !isValidRwandaPhone(normalizedPhone)) {
+        throw new Error('Enter a valid Rwanda phone number (07XXXXXXXX or 2507XXXXXXXX).');
+      }
 
       // 2) Initiate provider payment for that booking.
       const initiateResponse = await fetch(`${API_URL}/payments/initiate`, {

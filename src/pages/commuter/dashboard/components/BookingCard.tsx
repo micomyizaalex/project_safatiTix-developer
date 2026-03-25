@@ -1,7 +1,7 @@
 import React from 'react';
 import { Ban, Bus, Clock3, Eye, Navigation, Ticket } from 'lucide-react';
 import { BookingRecord } from '../types';
-import { formatCurrency, formatDate, formatTime, isActiveBooking } from '../utils';
+import { formatCurrency, formatDate, formatTime } from '../utils';
 import SeatMapPreview from './SeatMapPreview';
 
 interface BookingCardProps {
@@ -31,8 +31,16 @@ export default function BookingCard({
   onCancelBooking,
   onTrackBus,
 }: BookingCardProps) {
-  const isTrackable = isActiveBooking(booking);
-  const isCanceled = booking.status === 'CANCELLED';
+  const normalizedStatus = String(booking.status || 'UNKNOWN').toUpperCase();
+  const isTrackable = normalizedStatus === 'CONFIRMED' && Boolean(booking.scheduleId);
+  const isCanceled = normalizedStatus === 'CANCELLED';
+  const trackingHint =
+    normalizedStatus !== 'CONFIRMED'
+      ? 'Tracking unlocks once this booking is confirmed.'
+      : !booking.scheduleId
+        ? 'Tracking setup is still pending for this trip.'
+        : 'Live tracking is ready for this trip.';
+  const trackButtonLabel = isTrackable ? 'Track Bus' : 'Tracking Unavailable';
 
   return (
     <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
@@ -45,9 +53,9 @@ export default function BookingCard({
           <p className="mt-1 text-sm text-slate-500">Ref: {booking.bookingRef || booking.id}</p>
         </div>
         <span
-          className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${statusClasses[booking.status] || statusClasses.UNKNOWN}`}
+          className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${statusClasses[normalizedStatus] || statusClasses.UNKNOWN}`}
         >
-          {booking.status}
+          {normalizedStatus}
         </span>
       </div>
 
@@ -71,7 +79,12 @@ export default function BookingCard({
       </div>
 
       <div className="mt-4">
-        <SeatMapPreview scheduleId={booking.scheduleId} isTrackable={isTrackable} accessToken={accessToken} />
+        <SeatMapPreview
+          scheduleId={booking.scheduleId}
+          isTrackable={isTrackable}
+          trackingHint={trackingHint}
+          accessToken={accessToken}
+        />
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2">
@@ -95,10 +108,11 @@ export default function BookingCard({
         <button
           onClick={() => onTrackBus(booking)}
           disabled={!isTrackable}
-          className="inline-flex items-center gap-2 rounded-full border border-[#F4A261]/40 bg-[#F4A261]/15 px-4 py-2 text-sm font-semibold text-[#A76025] transition hover:bg-[#F4A261]/25 disabled:cursor-not-allowed disabled:opacity-50"
+          title={!isTrackable ? trackingHint : 'Open live bus tracking'}
+          className="inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-100 disabled:text-slate-400 enabled:border-[#F4A261]/40 enabled:bg-[#F4A261]/15 enabled:text-[#A76025] enabled:hover:bg-[#F4A261]/25"
         >
           <Navigation className="h-4 w-4" />
-          Track Bus
+          {trackButtonLabel}
         </button>
 
         <div className="ml-auto hidden items-center gap-1 text-xs text-slate-500 sm:flex">

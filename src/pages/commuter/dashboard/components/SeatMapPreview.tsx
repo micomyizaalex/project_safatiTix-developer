@@ -5,6 +5,7 @@ import { authHeaders, parseMaybeJson } from '../utils';
 interface SeatMapPreviewProps {
   scheduleId: string;
   isTrackable: boolean;
+  trackingHint?: string;
   accessToken?: string;
 }
 
@@ -16,7 +17,7 @@ interface BusLocation {
   timestamp?: string | number;
 }
 
-export default function SeatMapPreview({ scheduleId, isTrackable, accessToken }: SeatMapPreviewProps) {
+export default function SeatMapPreview({ scheduleId, isTrackable, trackingHint, accessToken }: SeatMapPreviewProps) {
   const [loading, setLoading] = useState(false);
   const [location, setLocation] = useState<BusLocation | null>(null);
 
@@ -59,7 +60,7 @@ export default function SeatMapPreview({ scheduleId, isTrackable, accessToken }:
   if (!isTrackable) {
     return (
       <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-xs text-slate-500">
-        Tracking available for active or upcoming trips.
+        {trackingHint || 'Tracking is not available for this booking yet.'}
       </div>
     );
   }

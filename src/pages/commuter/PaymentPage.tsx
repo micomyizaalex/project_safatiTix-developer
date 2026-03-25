@@ -139,6 +139,24 @@ const formatScheduleTime = (timeValue?: string, dateValue?: string) => {
   return parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 };
 
+const normalizeRwandaPhoneInput = (value: string) => {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.startsWith('250')) return digits;
+  if (digits.startsWith('0')) return `250${digits.slice(1)}`;
+  if (digits.length === 9) return `250${digits}`;
+  return digits;
+};
+
+const isValidRwandaPhone = (value: string) => /^2507\d{8}$/.test(String(value || ''));
+
+const maskPhone = (value: string) => {
+  if (!value) return 'unknown number';
+  const clean = String(value).replace(/\D/g, '');
+  if (clean.length < 4) return 'unknown number';
+  return `***${clean.slice(-4)}`;
+};
+
 const hasReasonableScheduleYear = (value?: string) => {
   const iso = toIsoDate(value);
   if (!iso) return false;
@@ -180,6 +198,7 @@ export default function PaymentPage() {
   const pollingTimeoutRef = useRef<number | null>(null);
   const activeBookingRef = useRef<string | null>(null);
   const paymentCompletedRef = useRef(false);
+  const paymentInitiatedRef = useRef(false);
   const pollStartTimeRef = useRef<number>(0);
 
   // Maximum time (ms) to poll before giving up waiting for the phone confirmation
@@ -306,6 +325,10 @@ export default function PaymentPage() {
       }
 
       if (activeBookingRef.current && !paymentCompletedRef.current) {
+        // If provider initiation already happened, do not auto-cancel on unmount.
+        // Late provider/webhook confirmation can still arrive after navigation.
+        if (paymentInitiatedRef.current) return;
+
         const hdrs: Record<string, string> = {};
         if (accessToken) hdrs.Authorization = `Bearer ${accessToken}`;
 
@@ -346,6 +369,7 @@ export default function PaymentPage() {
 
   const finishSuccess = (message?: string) => {
     paymentCompletedRef.current = true;
+    paymentInitiatedRef.current = false;
     clearPolling();
     setProcessing(false);
     setError(null);
@@ -366,12 +390,28 @@ export default function PaymentPage() {
 
     // Hard cap: if we've been polling for longer than POLL_TIMEOUT_MS, abort
     if (Date.now() - pollStartTimeRef.current > POLL_TIMEOUT_MS) {
+      try {
+        // Final reconciliation before declaring timeout, to reduce false negatives
+        // when provider/webhook confirmation arrives close to the polling limit.
+        const finalResponse = await fetch(`${API_URL}/payments/${bookingId}/status`, {
+          headers: getHeaders(),
+        });
+        const finalData = await finalResponse.json().catch(() => ({}));
+        const finalPayment = finalData?.payment;
+        if (finalResponse.ok && finalPayment?.booking_status === 'paid') {
+          finishSuccess('Payment confirmed! Your ticket is now available.');
+          return;
+        }
+      } catch {
+        // Fall through to timeout message.
+      }
+
       clearPolling();
       setProcessing(false);
       setStatusMessage(null);
       setError(
         'Payment confirmation timed out. If you approved the payment on your phone, ' +
-        'please check My Tickets — your booking may have been confirmed.'
+        'please check My Tickets - your booking may have been confirmed.'
       );
       return;
     }
@@ -391,6 +431,10 @@ export default function PaymentPage() {
         throw new Error('Payment status response is incomplete');
       }
 
+      const elapsedMs = Date.now() - pollStartTimeRef.current;
+      const noProviderReference = !payment.provider_reference;
+      const providerStatus = String(payment.provider_status || '').toLowerCase();
+
       // Only treat as success when booking is fully confirmed (tickets created)
       if (payment.booking_status === 'paid') {
         finishSuccess('Payment confirmed! Your ticket is now available.');
@@ -401,11 +445,45 @@ export default function PaymentPage() {
         clearPolling();
         setProcessing(false);
         setSuccess(false);
+        paymentInitiatedRef.current = false;
         activeBookingRef.current = null;
         setActiveBookingId(null);
         setBookingExpiresAt(null);
         setStatusMessage(null);
         setError('Payment failed or expired. Your seat hold was released.');
+        return;
+      }
+
+      // Guard against long "waiting" loops when provider never issued a push.
+      if (elapsedMs > 90_000 && noProviderReference && !providerStatus) {
+        clearPolling();
+        setProcessing(false);
+        setSuccess(false);
+        paymentInitiatedRef.current = false;
+        if (activeBookingRef.current) {
+          await cancelBookingHold(activeBookingRef.current);
+        }
+        activeBookingRef.current = null;
+        setActiveBookingId(null);
+        setBookingExpiresAt(null);
+        setStatusMessage(null);
+        setError('No payment prompt was detected on provider side. Please retry payment.');
+        return;
+      }
+
+      if (elapsedMs > 120_000 && ['not_found', 'unknown', 'error'].includes(providerStatus)) {
+        clearPolling();
+        setProcessing(false);
+        setSuccess(false);
+        paymentInitiatedRef.current = false;
+        if (activeBookingRef.current) {
+          await cancelBookingHold(activeBookingRef.current);
+        }
+        activeBookingRef.current = null;
+        setActiveBookingId(null);
+        setBookingExpiresAt(null);
+        setStatusMessage(null);
+        setError('Provider could not find this payment request. Please retry.');
         return;
       }
 
@@ -434,30 +512,86 @@ export default function PaymentPage() {
     setStatusMessage(null);
 
     try {
-      const createResponse = await fetch(`${API_URL}/tickets/create`, {
+      const phoneOrCard = paymentMethod === 'card_payment' ? cardNumber : phoneNumber;
+      if (!phoneOrCard?.trim()) {
+        throw new Error(paymentMethod === 'card_payment' ? 'Card number is required.' : 'Phone number is required.');
+      }
+
+      const normalizedPhone = paymentMethod === 'card_payment'
+        ? ''
+        : normalizeRwandaPhoneInput(phoneNumber);
+
+      if (paymentMethod !== 'card_payment' && !isValidRwandaPhone(normalizedPhone)) {
+        throw new Error('Enter a valid Rwanda phone number (07XXXXXXXX or 2507XXXXXXXX).');
+      }
+
+      // 1) Create booking hold (seat lock only, no ticket creation yet).
+      const holdResponse = await fetch(`${API_URL}/payments/booking-hold`, {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify({
-          tripId: scheduleId,
-          seats: selectedSeats,
-          userId: user?.id,
+          scheduleId,
+          selectedSeats,
+          paymentMethod,
+          amount: totalAmount,
+          pricePerSeat,
+          fromStop,
+          toStop,
         }),
       });
 
-      const createData = await createResponse.json().catch(() => ({}));
-      if (!createResponse.ok) {
-        throw new Error(createData?.message || createData?.error || 'Failed to create ticket');
+      const holdData = await holdResponse.json().catch(() => ({}));
+      if (!holdResponse.ok) {
+        throw new Error(holdData?.message || holdData?.error || 'Failed to reserve seats for payment.');
       }
 
-      const tickets = Array.isArray(createData?.tickets) ? createData.tickets : [];
-      setCreatedTickets(
-        tickets.map((t: any) => ({
-          ticketId: t.ticketId || t.id || '',
-          bookingRef: t.bookingRef || t.booking_ref || '',
-          qrCodeUrl: t.qrCodeUrl || t.qr_code_url || undefined,
-        }))
-      );
-      finishSuccess('Payment confirmed! Ticket booked successfully.');
+      const bookingId = String(holdData?.booking?.id || holdData?.booking?.booking_id || '');
+      if (!bookingId) {
+        throw new Error('Booking hold response missing booking id.');
+      }
+
+      setActiveBookingId(bookingId);
+      activeBookingRef.current = bookingId;
+      setBookingExpiresAt(holdData?.booking?.expires_at || null);
+
+      // 2) Initiate provider payment for that booking.
+      const initiateResponse = await fetch(`${API_URL}/payments/initiate`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({
+          booking_id: bookingId,
+          payment_method: paymentMethod,
+          phone_number: normalizedPhone,
+          amount: totalAmount,
+        }),
+      });
+
+      const initiateData = await initiateResponse.json().catch(() => ({}));
+      if (!initiateResponse.ok) {
+        await cancelBookingHold(bookingId);
+        throw new Error(initiateData?.message || initiateData?.error || 'Failed to initiate payment.');
+      }
+
+      paymentInitiatedRef.current = true;
+
+      const payment = initiateData?.payment;
+      if (payment?.booking_status === 'paid') {
+        const tickets = Array.isArray(initiateData?.tickets) ? initiateData.tickets : [];
+        setCreatedTickets(
+          tickets.map((t: any) => ({
+            ticketId: t.ticketId || t.id || '',
+            bookingRef: t.bookingRef || t.booking_ref || '',
+            qrCodeUrl: t.qrCodeUrl || t.qr_code_url || undefined,
+          }))
+        );
+        finishSuccess('Payment confirmed! Your ticket is now available.');
+        return;
+      }
+
+      // 3) Poll until backend confirms paid and creates the ticket.
+      setStatusMessage(`Waiting for payment confirmation on your phone (${maskPhone(normalizedPhone)})...`);
+      pollStartTimeRef.current = Date.now();
+      await pollPaymentStatus(bookingId);
     } catch (err: any) {
       clearPolling();
       setError(err.message || 'Booking failed. Please try again.');

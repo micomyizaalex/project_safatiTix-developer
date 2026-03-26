@@ -7,7 +7,7 @@ const SAFARITIX = {
 import React, { useEffect, useState, CSSProperties } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
-import { API_URL } from '../utils/supabase-client';
+import { API_URL } from '../config';
 import SeatMap from '../components/SeatMap';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';

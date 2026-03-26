@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, CSSProperties } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../components/AuthContext';
-import { API_URL } from '../../utils/supabase-client';
+import { API_URL } from '../../config';
 import {
   ArrowLeft,
   CreditCard,
@@ -205,6 +205,8 @@ export default function PaymentPage() {
   const POLL_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
   const totalAmount = selectedSeats.length * pricePerSeat;
+  const passengerEmail = String(user?.email || '').trim();
+  const passengerName = String(user?.name || user?.full_name || '').trim();
   // Demo mode: always treat payment as successful immediately after booking-hold.
   // This skips provider initiation + polling and instead calls the backend demo-confirm endpoint.
   const DEMO_MODE = true;
@@ -515,6 +517,10 @@ export default function PaymentPage() {
     setStatusMessage(null);
 
     try {
+      if (!passengerEmail) {
+        throw new Error('Your account does not have an email address. Please update your profile before confirming payment so we can send your ticket.');
+      }
+
       // 1) Create booking hold (seat lock only, no ticket creation yet).
       // In DEMO mode we don't require phone/card validation.
       const holdResponse = await fetch(`${API_URL}/payments/booking-hold`, {
@@ -528,6 +534,8 @@ export default function PaymentPage() {
           pricePerSeat,
           fromStop,
           toStop,
+          passengerEmail,
+          passengerName,
         }),
       });
 
@@ -586,6 +594,7 @@ export default function PaymentPage() {
             booking: demoData?.booking,
             tickets: returnedTickets,
             qrCodeUrl: demoData?.qrCodeUrl || returnedTickets?.[0]?.qr_code_url || null,
+            emailSentTo: passengerEmail,
           },
         });
         return;
@@ -999,7 +1008,7 @@ export default function PaymentPage() {
               <div style={styles.successAlert}>
                 <Check size={20} />
                 <span>
-                  Booking successful! Redirecting to your tickets...
+                  Booking successful! Your ticket has been generated and sent to {passengerEmail}. Redirecting to your tickets...
                   {createdTickets.length > 0 ? ` (Ref: ${createdTickets[0].bookingRef || createdTickets[0].ticketId})` : ''}
                 </span>
               </div>

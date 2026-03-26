@@ -62,9 +62,9 @@
         overlay: false,
       },
       proxy: {
-        // Proxy API requests during development to the deployed backend server
+        // Proxy API requests during development to the local backend server
         '/api': {
-          target: 'https://backend-v2-wjcs.onrender.com',
+          target: 'http://localhost:5000',
           changeOrigin: true,
           secure: false,
           rewrite: (path) => path.replace(/^\/api/, '/api')

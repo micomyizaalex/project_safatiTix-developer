@@ -2,6 +2,7 @@ import { useState, useEffect, CSSProperties } from 'react';
 import { useAuth } from '../components/AuthContext';
 import { BarChart3, Download, Calendar, Filter, FileText, TrendingUp } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { API_URL } from '../config';
 
 const SAFARITIX = {
   primary: '#0077B6',
@@ -37,8 +38,6 @@ export default function Reports() {
   const [loading, setLoading] = useState(true);
   const [reportType, setReportType] = useState('overview');
   const [dateRange, setDateRange] = useState('month');
-  const API_URL = import.meta.env.VITE_API_URL || 'https://backend-v2-wjcs.onrender.com/api';
-
   useEffect(() => {
     fetchReportData();
   }, [reportType, dateRange]);

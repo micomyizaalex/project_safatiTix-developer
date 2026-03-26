@@ -20,11 +20,13 @@ export default function BookingSuccessPage() {
     booking?: BookingState;
     tickets?: Array<any>;
     qrCodeUrl?: string | null;
+    emailSentTo?: string | null;
   };
 
   const booking = state.booking || {};
   const tickets = Array.isArray(state.tickets) ? state.tickets : [];
   const qrCodeUrl = state.qrCodeUrl || tickets?.[0]?.qr_code_url || tickets?.[0]?.qrCodeUrl || null;
+  const emailSentTo = state.emailSentTo || null;
 
   const seats = Array.isArray(booking.seats) ? booking.seats : (tickets || []).map((t: any) => t.seat_number || t.seatNumber).filter(Boolean);
 
@@ -180,6 +182,14 @@ export default function BookingSuccessPage() {
               </div>
 
               <div className="mt-8 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+                {emailSentTo && (
+                  <div className="rounded-2xl bg-[#E6F4FB] px-4 py-3 text-sm font-semibold text-[#005F8E]">
+                    Your e-ticket has been sent to {emailSentTo}.
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-4 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
                 <div className="w-full sm:w-auto flex flex-col sm:flex-row gap-3">
                   <button
                     onClick={() => navigate(`/track-bus/${booking.bookingId || tickets?.[0]?.id || ''}`)}

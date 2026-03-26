@@ -14,11 +14,11 @@ import {
 } from 'recharts';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { API_URL as API_BASE_URL } from '../../config';
 import { DEFAULT_PLAN_PERMISSIONS } from '../../utils/subscriptionPlans';
 import AdminNotificationBell from '../../components/AdminNotificationBell';
 import AdminFleetTracking from '../../components/AdminFleetTracking';
 import ComplaintManagementAdmin from '../../components/ComplaintManagementAdmin';
-const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 // ==================== BRAND COLORS ====================
 const COLORS = {

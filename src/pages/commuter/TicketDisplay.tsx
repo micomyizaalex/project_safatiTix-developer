@@ -5,7 +5,7 @@ import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Ticket as TicketIcon, XCircle, Loader2, Ban } from 'lucide-react';
 import { useAuth } from '../../components/AuthContext';
-import { API_URL } from '../../utils/supabase-client';
+import { API_URL } from '../../config';
 
 interface TicketDisplayProps {
   ticket: any;

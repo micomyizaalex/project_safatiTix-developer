@@ -1,6 +1,7 @@
 import { useState, useEffect, CSSProperties } from 'react';
 import { useAuth } from '../components/AuthContext';
 import { Ticket, Eye, Search, Filter, Download, Calendar } from 'lucide-react';
+import { API_URL } from '../../config';
 
 const SAFARITIX = {
   primary: '#0077B6',
@@ -38,8 +39,6 @@ export default function Tickets() {
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
-  const API_URL = import.meta.env.VITE_API_URL || 'https://backend-v2-wjcs.onrender.com/api';
-
   useEffect(() => {
     fetchTickets();
   }, []);

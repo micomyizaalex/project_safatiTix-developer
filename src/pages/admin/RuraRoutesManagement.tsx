@@ -1,8 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { AlertCircle, CheckCircle, Edit2, Loader2, Plus, Save, Trash2, X } from 'lucide-react';
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+import { API_URL as API_BASE_URL } from '../../config';
 const PAGE_SIZE = 50;
 
 type RouteStatus = 'active' | 'inactive';

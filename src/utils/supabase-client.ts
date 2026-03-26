@@ -1,4 +1,5 @@
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+import { API_URL } from '../config';
 
 // Using dummy values as we're not actually using Supabase, just our custom backend
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://placeholder.supabase.co';
@@ -10,6 +11,3 @@ export const supabase = createSupabaseClient(
 );
 
 export const createClient = createSupabaseClient;
-export const API_URL =
-  import.meta.env.VITE_API_URL ||
-  (import.meta.env.PROD ? 'https://backend-v2-wjcs.onrender.com/api' : '/api');

@@ -2,8 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { ArrowLeft, CheckCircle2, Crown, Loader2, RefreshCw } from 'lucide-react';
 import { Link } from 'react-router-dom';
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+import { API_URL as API_BASE_URL } from '../../config';
 
 type RequestStatus = 'pending' | 'approved' | 'rejected';
 

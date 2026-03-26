@@ -3,8 +3,7 @@ import axios from 'axios';
 import { ArrowLeft, CheckCircle2, ExternalLink, Eye, FileText, Loader2, RefreshCw, Search, ShieldCheck, XCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import Modal from '../../components/Modal';
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+import { API_URL as API_BASE_URL } from '../../config';
 
 type VerificationStatus = 'pending' | 'approved' | 'rejected';
 type SortField = 'company_name' | 'email' | 'account_status';

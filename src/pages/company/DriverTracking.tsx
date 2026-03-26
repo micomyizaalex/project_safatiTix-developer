@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../components/AuthContext';
 import { MapPin, Navigation, Play, Square, Clock, Activity } from 'lucide-react';
+import { API_URL } from '../../config';
 
 const SAFARITIX = {
   primary: '#0077B6',
@@ -29,8 +30,6 @@ export default function DriverTracking() {
   const [error, setError] = useState<string>('');
   const [busId, setBusId] = useState<string>('');
   const [locationInterval, setLocationInterval] = useState<NodeJS.Timeout | null>(null);
-  const API_URL = import.meta.env.VITE_API_URL || 'https://backend-v2-wjcs.onrender.com/api';
-
   // Check for active trip on mount
   useEffect(() => {
     checkTripStatus();

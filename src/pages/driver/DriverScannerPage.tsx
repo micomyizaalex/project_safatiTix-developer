@@ -156,12 +156,15 @@ export default function DriverScannerPage() {
     }
 
     try {
-      // Call our /scan/:ticketId endpoint (accepts JSON response)
-      const res = await fetch(`/scan/${encodeURIComponent(ticketId)}`, {
+      // Use transactional ticket validation endpoint.
+      const res = await fetch('/api/tickets/validate', {
+        method: 'POST',
         headers: {
+          'Content-Type': 'application/json',
           Accept: 'application/json',
           ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
         },
+        body: JSON.stringify({ qrCodeData: rawQr }),
       });
 
       const data = await res.json();
@@ -170,19 +173,24 @@ export default function DriverScannerPage() {
         setResult({
           type: 'VALID',
           title: 'Ticket Valid ✓',
-          message: 'Passenger has been checked in successfully.',
+          message: data.message || 'Passenger has been checked in successfully.',
           ticket: data.ticket,
         });
       } else {
         const statusMap: Record<string, ResultType> = {
           NOT_FOUND: 'INVALID',
           ALREADY_USED: 'ALREADY_USED',
+          ALREADY_USED_SELF: 'ALREADY_USED',
           CHECKED_IN: 'ALREADY_USED',
+          TICKET_CANCELLED: 'CANCELLED',
           CANCELLED: 'CANCELLED',
+          TRIP_MISMATCH: 'INVALID',
           PENDING_PAYMENT: 'PENDING_PAYMENT',
+          TRIP_NOT_ACTIVE: 'INVALID',
+          SCHEDULE_MISMATCH: 'INVALID',
           ERROR: 'ERROR',
         };
-        const type: ResultType = statusMap[data.status] || 'INVALID';
+        const type: ResultType = statusMap[data.reason || data.status] || 'INVALID';
         const titles: Record<ResultType, string> = {
           VALID: 'Ticket Valid',
           INVALID: 'Invalid Ticket',

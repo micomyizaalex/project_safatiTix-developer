@@ -16,6 +16,7 @@ import {
   Bus,
   AlertCircle,
 } from 'lucide-react';
+import { useAuth } from '../../components/AuthContext';
 
 // SafariTix Brand Colors
 const COLORS = {
@@ -48,9 +49,11 @@ interface TicketData {
 }
 
 export default function TicketsManagement() {
+  const { accessToken } = useAuth();
   const [tickets, setTickets] = useState<TicketData[]>([]);
   const [filteredTickets, setFilteredTickets] = useState<TicketData[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState('');
@@ -68,8 +71,15 @@ export default function TicketsManagement() {
 
   const fetchTickets = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
-      const token = localStorage.getItem('token');
+      const token = accessToken || localStorage.getItem('token') || localStorage.getItem('accessToken');
+      if (!token) {
+        setTickets([]);
+        setLoadError('Missing authentication token. Please log in again.');
+        return;
+      }
+
       const response = await fetch('/api/company/tickets', {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -80,9 +90,15 @@ export default function TicketsManagement() {
       if (response.ok) {
         const data = await response.json();
         setTickets(data.tickets || []);
+      } else {
+        const payload = await response.json().catch(() => ({}));
+        setTickets([]);
+        setLoadError(payload.error || payload.message || `Failed to load tickets (${response.status})`);
       }
     } catch (error) {
       console.error('Failed to fetch tickets:', error);
+      setTickets([]);
+      setLoadError('Failed to fetch tickets. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -124,7 +140,7 @@ export default function TicketsManagement() {
     if (!confirm('Are you sure you want to cancel this ticket?')) return;
 
     try {
-      const token = localStorage.getItem('token');
+      const token = accessToken || localStorage.getItem('token') || localStorage.getItem('accessToken');
       const response = await fetch(`/api/company/tickets/${ticketId}`, {
         method: 'PATCH',
         headers: {
@@ -180,7 +196,7 @@ export default function TicketsManagement() {
 
   const handleMarkCompleted = async (ticketId: string) => {
     try {
-      const token = localStorage.getItem('token');
+      const token = accessToken || localStorage.getItem('token') || localStorage.getItem('accessToken');
       const response = await fetch(`/api/company/tickets/${ticketId}`, {
         method: 'PATCH',
         headers: {
@@ -210,8 +226,11 @@ export default function TicketsManagement() {
 
   // Calculate summary stats
   const totalTickets = tickets.length;
-  const confirmedTickets = tickets.filter((t) => t.status === 'CONFIRMED' || t.status === 'CHECKED_IN').length;
-  const cancelledTickets = tickets.filter((t) => t.status === 'CANCELLED').length;
+  const confirmedTickets = tickets.filter((t) => {
+    const status = String(t.status || '').toUpperCase();
+    return status === 'CONFIRMED' || status === 'CHECKED_IN';
+  }).length;
+  const cancelledTickets = tickets.filter((t) => String(t.status || '').toUpperCase() === 'CANCELLED').length;
   const today = new Date().toISOString().split('T')[0];
   const todayTickets = tickets.filter((t) => t.scheduleDate === today).length;
 
@@ -227,6 +246,12 @@ export default function TicketsManagement() {
         </h1>
         <p className="text-gray-600">View, filter, and manage all ticket bookings</p>
       </div>
+
+      {loadError && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {loadError}
+        </div>
+      )}
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">

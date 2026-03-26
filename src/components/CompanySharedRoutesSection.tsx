@@ -58,14 +58,21 @@ type CompanyTicket = {
   id?: string;
   ticket_id?: string;
   booking_ref?: string;
+  bookingRef?: string;
   schedule_id?: string;
+  scheduleId?: string;
   seat_number?: string | number;
+  seatNumber?: string | number;
   from_stop?: string;
   to_stop?: string;
+  routeFrom?: string;
+  routeTo?: string;
   passenger_name?: string;
+  passengerName?: string;
   price?: number;
   status?: string;
   created_at?: string;
+  createdAt?: string;
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -92,6 +99,13 @@ const statusBadge = (s: string) => {
   if (l === 'confirmed')   return 'bg-green-100 text-green-700 border-green-200';
   return 'bg-gray-100 text-gray-600 border-gray-200';
 };
+
+const ticketPassenger = (t: CompanyTicket) => t.passenger_name || t.passengerName || '';
+const ticketBookingRef = (t: CompanyTicket) => t.booking_ref || t.bookingRef || '';
+const ticketSeat = (t: CompanyTicket) => t.seat_number ?? t.seatNumber ?? '';
+const ticketFrom = (t: CompanyTicket) => t.from_stop || t.routeFrom || '';
+const ticketTo = (t: CompanyTicket) => t.to_stop || t.routeTo || '';
+const ticketCreatedAt = (t: CompanyTicket) => t.created_at || t.createdAt || '';
 
 // ─── Stop Chain ──────────────────────────────────────────────────────────────
 
@@ -519,6 +533,7 @@ function OccupancyBar({ occupied, capacity }: { occupied: number; capacity: numb
     </div>
   );
 }
+const normalizeScheduleId = (value: unknown): string => String(value ?? '').trim();
 
 // ─── Create Schedule Form ────────────────────────────────────────────────────
 
@@ -833,9 +848,9 @@ export default function CompanySharedRoutesSection({
     const q = ticketQ.toLowerCase();
     return tickets.filter(t =>
       !q ||
-      (t.passenger_name || '').toLowerCase().includes(q) ||
-      (t.booking_ref || '').toLowerCase().includes(q) ||
-      String(t.seat_number || '').includes(q),
+      ticketPassenger(t).toLowerCase().includes(q) ||
+      ticketBookingRef(t).toLowerCase().includes(q) ||
+      String(ticketSeat(t)).includes(q),
     );
   }, [tickets, ticketQ]);
 
@@ -852,6 +867,17 @@ export default function CompanySharedRoutesSection({
     [...new Set(ruraRoutes.map(r => r.source_document).filter(Boolean) as string[])].sort(),
     [ruraRoutes],
   );
+
+  const occupiedBySchedule = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const ticket of tickets) {
+      const scheduleId = normalizeScheduleId(ticket.schedule_id ?? ticket.scheduleId);
+      if (!scheduleId) continue;
+      if (String(ticket.status || '').toLowerCase() === 'cancelled') continue;
+      counts.set(scheduleId, (counts.get(scheduleId) || 0) + 1);
+    }
+    return counts;
+  }, [tickets]);
 
   const filteredRuraRoutes = useMemo(() => {
     const q = debouncedSearch.toLowerCase();
@@ -1308,8 +1334,9 @@ export default function CompanySharedRoutesSection({
             <div className="space-y-3">
               {schedules.map(sch => {
                 const ex = expandedId === sch.schedule_id;
-                const schTix = tickets.filter(t => t.schedule_id === sch.schedule_id);
-                const occupied = schTix.filter(t => (t.status || '').toLowerCase() !== 'cancelled').length;
+                const scheduleKey = normalizeScheduleId(sch.schedule_id);
+                const schTix = tickets.filter(t => normalizeScheduleId(t.schedule_id ?? t.scheduleId) === scheduleKey);
+                const occupied = occupiedBySchedule.get(scheduleKey) || 0;
                 return (
                   <div key={sch.schedule_id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
                     <div className="p-5">
@@ -1395,19 +1422,19 @@ export default function CompanySharedRoutesSection({
                               <tbody>
                                 {schTix.map((t, i) => (
                                   <tr key={t.id || t.ticket_id || i} className="border-t border-gray-200">
-                                    <td className="py-2 pr-4 font-semibold text-gray-800">{t.passenger_name || '—'}</td>
+                                    <td className="py-2 pr-4 font-semibold text-gray-800">{ticketPassenger(t) || '—'}</td>
                                     <td className="py-2 pr-4">
-                                      {t.from_stop && t.to_stop ? (
+                                      {ticketFrom(t) && ticketTo(t) ? (
                                         <span className="flex items-center gap-1">
-                                          <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded">{t.from_stop}</span>
+                                          <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded">{ticketFrom(t)}</span>
                                           <ArrowRight className="w-3 h-3 text-gray-400" />
-                                          <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded">{t.to_stop}</span>
+                                          <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded">{ticketTo(t)}</span>
                                         </span>
                                       ) : '—'}
                                     </td>
-                                    <td className="py-2 pr-4 font-mono font-bold">{t.seat_number || '—'}</td>
+                                    <td className="py-2 pr-4 font-mono font-bold">{ticketSeat(t) || '—'}</td>
                                     <td className="py-2 pr-4">{t.price ? fmtRwf(t.price) : '—'}</td>
-                                    <td className="py-2 pr-4 font-mono text-gray-500 truncate max-w-[100px]">{t.booking_ref || '—'}</td>
+                                    <td className="py-2 pr-4 font-mono text-gray-500 truncate max-w-[100px]">{ticketBookingRef(t) || '—'}</td>
                                     <td className="py-2">
                                       <span className={`px-1.5 py-0.5 rounded text-xs font-bold border ${statusBadge(t.status || 'confirmed')}`}>
                                         {t.status || 'confirmed'}
@@ -1475,26 +1502,26 @@ export default function CompanySharedRoutesSection({
                   <tbody className="divide-y divide-gray-100">
                     {filteredTickets.map((t, i) => (
                       <tr key={t.id || t.ticket_id || i} className="hover:bg-blue-50/20 transition-colors">
-                        <td className="px-4 py-3 font-semibold text-gray-900">{t.passenger_name || 'Anonymous'}</td>
+                        <td className="px-4 py-3 font-semibold text-gray-900">{ticketPassenger(t) || 'Anonymous'}</td>
                         <td className="px-4 py-3">
-                          {t.from_stop && t.to_stop ? (
+                          {ticketFrom(t) && ticketTo(t) ? (
                             <span className="flex items-center gap-1">
-                              <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-semibold">{t.from_stop}</span>
+                              <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-semibold">{ticketFrom(t)}</span>
                               <ArrowRight className="w-3 h-3 text-gray-400" />
-                              <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-xs font-semibold">{t.to_stop}</span>
+                              <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-xs font-semibold">{ticketTo(t)}</span>
                             </span>
                           ) : '—'}
                         </td>
-                        <td className="px-4 py-3 font-mono font-bold text-gray-800">{t.seat_number || '—'}</td>
+                        <td className="px-4 py-3 font-mono font-bold text-gray-800">{ticketSeat(t) || '—'}</td>
                         <td className="px-4 py-3 font-semibold text-green-700">{t.price ? fmtRwf(t.price) : '—'}</td>
-                        <td className="px-4 py-3 font-mono text-xs text-gray-500">{t.booking_ref || '—'}</td>
+                        <td className="px-4 py-3 font-mono text-xs text-gray-500">{ticketBookingRef(t) || '—'}</td>
                         <td className="px-4 py-3">
                           <span className={`px-2.5 py-1 rounded-full text-xs font-bold border capitalize ${statusBadge(t.status || 'confirmed')}`}>
                             {t.status || 'confirmed'}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-xs text-gray-400">
-                          {t.created_at ? String(t.created_at).slice(0, 16).replace('T', ' ') : '—'}
+                          {ticketCreatedAt(t) ? String(ticketCreatedAt(t)).slice(0, 16).replace('T', ' ') : '—'}
                         </td>
                       </tr>
                     ))}

@@ -35,7 +35,7 @@ export default function Buses() {
     seatLayout: '',
     status: 'active'
   });
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+  const API_URL = import.meta.env.VITE_API_URL || 'https://backend-v2-wjcs.onrender.com/api';
 
   useEffect(() => {
     fetchBuses();

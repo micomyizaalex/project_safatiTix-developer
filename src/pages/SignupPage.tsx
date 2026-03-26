@@ -6,15 +6,10 @@ const SAFARITIX = {
 
 import React, { useState, CSSProperties } from "react";
 import { Link } from "react-router-dom";
-import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
-import { Label } from "../components/ui/label";
 import {
   Select,
   SelectContent,
   SelectItem,
-  SelectTrigger,
-  SelectValue,
 } from "../components/ui/select";
 import {
   Bus,
@@ -48,8 +43,22 @@ export default function SignupPage() {
     setError("");
     setSuccessMessage("");
 
+    const normalizedName = signupName.trim();
+    const normalizedEmail = signupEmail.trim().toLowerCase();
+    const normalizedCompanyName = companyName.trim();
+
     if (!agreeToTerms) {
       setError("Please agree to the Terms & Privacy");
+      return;
+    }
+
+    if (!normalizedName || !normalizedEmail || !signupPassword) {
+      setError("Please complete all required fields.");
+      return;
+    }
+
+    if (signupRole === "company_admin" && !normalizedCompanyName) {
+      setError("Company name is required for transport company accounts.");
       return;
     }
 
@@ -57,32 +66,56 @@ export default function SignupPage() {
 
     try {
       const payload = {
-        full_name: signupName,
-        email: signupEmail,
+        full_name: normalizedName,
+        email: normalizedEmail,
         password: signupPassword,
         role: signupRole,
-        company_name: signupRole === "company_admin" ? companyName : undefined,
+        company_name:
+          signupRole === "company_admin" ? normalizedCompanyName : undefined,
       };
 
-      // TEMP LOG: inspect payload before sending to ensure role is present
-      // Remove this log after verification
       console.log("Signup payload:", payload);
 
-      const response = await fetch(
-        "/api/auth/register",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(payload),
+      const response = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        body: JSON.stringify(payload),
+      });
 
-      const data = await response.json();
+      const rawResponse = await response.text();
+      let data: Record<string, any> = {};
+
+      if (rawResponse) {
+        try {
+          data = JSON.parse(rawResponse);
+        } catch {
+          data = { message: rawResponse };
+        }
+      }
 
       if (!response.ok) {
-        throw new Error(data.error || "Signup failed");
+        console.error("Signup failed:", {
+          status: response.status,
+          payload,
+          response: data,
+        });
+
+        const backendMessage =
+          data.error ||
+          data.message ||
+          `Signup failed with status ${response.status}`;
+
+        if (backendMessage === "Validation error") {
+          throw new Error(
+            "That email may already be registered. Try logging in, resetting your password, or using a different email address.",
+          );
+        }
+
+        throw new Error(
+          backendMessage,
+        );
       }
 
       // company_admin gets a token (auto-approved) — log them in directly
@@ -103,6 +136,7 @@ export default function SignupPage() {
       // All other roles: email verification required
       setRegisteredEmail(data.email || signupEmail);
     } catch (err: any) {
+      console.error("Signup request error:", err);
       setError(err.message || "Failed to create account. Please try again.");
     } finally {
       setIsLoading(false);
@@ -591,12 +625,10 @@ export default function SignupPage() {
             <div style={styles.formGroup}>
               <label style={styles.label}>I am a</label>
               <Select>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select your role" />
-                </SelectTrigger>
                 <SelectContent
                   value={signupRole}
                   onChange={(e) => setSignupRole(e.target.value)}
+                  style={{ ...styles.input, appearance: "auto" }}
                 >
                   <SelectItem value="commuter">Commuter (Passenger)</SelectItem>
                   <SelectItem value="company_admin">

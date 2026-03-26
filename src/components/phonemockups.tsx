@@ -6,15 +6,32 @@ interface PhoneMockupsProps {
 }
 
 export function PhoneMockups({ style }: PhoneMockupsProps) {
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+
+  const leftPhoneTransform = isMobile ? 'none' : 'rotate(-6deg) translateY(24px)';
+  const centerPhoneTransform = isMobile ? 'none' : 'scale(1.08)';
+  const rightPhoneTransform = isMobile ? 'none' : 'rotate(6deg) translateY(24px)';
+
+  const leftPhoneWidth = isMobile ? '220px' : '280px';
+  const centerPhoneWidth = isMobile ? '236px' : '300px';
+  const rightPhoneWidth = isMobile ? '220px' : '280px';
+
+  const sideScreenHeight = isMobile ? '500px' : '580px';
+  const centerScreenHeight = isMobile ? '530px' : '620px';
+
   const styles: Record<string, CSSProperties> = {
     container: {
       marginTop: '48px',
       display: 'flex',
-      justifyContent: 'center',
-      alignItems: 'flex-end',
+      justifyContent: isMobile ? 'flex-start' : 'center',
+      alignItems: isMobile ? 'center' : 'flex-end',
       gap: '24px',
       position: 'relative' as const,
-      flexWrap: 'wrap' as const,
+      flexWrap: isMobile ? 'nowrap' : 'wrap',
+      overflowX: isMobile ? 'auto' : 'visible',
+      overflowY: 'visible',
+      paddingBottom: isMobile ? '16px' : undefined,
+      WebkitOverflowScrolling: 'touch',
       ...style,
     },
     // iPhone Frame Styles
@@ -276,11 +293,16 @@ export function PhoneMockups({ style }: PhoneMockupsProps) {
       <div
         style={{
           ...styles.iphoneFrame,
-          width: '280px',
-          transform: 'rotate(-6deg) translateY(24px)',
+          width: leftPhoneWidth,
+          transform: leftPhoneTransform,
+          flex: '0 0 auto',
         }}
-        onMouseEnter={(e) => e.currentTarget.style.transform = 'rotate(0deg) translateY(0) scale(1.02)'}
-        onMouseLeave={(e) => e.currentTarget.style.transform = 'rotate(-6deg) translateY(24px)'}
+        onMouseEnter={(e) => {
+          if (!isMobile) e.currentTarget.style.transform = 'rotate(0deg) translateY(0) scale(1.02)';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.transform = leftPhoneTransform;
+        }}
       >
         {/* Notch */}
         <div style={styles.notch}>
@@ -289,7 +311,7 @@ export function PhoneMockups({ style }: PhoneMockupsProps) {
         </div>
 
         {/* Screen */}
-        <div style={{ ...styles.screen, height: '580px' }}>
+        <div style={{ ...styles.screen, height: sideScreenHeight }}>
           {/* Status Bar */}
           <div style={styles.statusBar}>
             <div style={styles.time}>9:41</div>
@@ -357,12 +379,17 @@ export function PhoneMockups({ style }: PhoneMockupsProps) {
       <div
         style={{
           ...styles.iphoneFrame,
-          width: '300px',
-          transform: 'scale(1.08)',
+          width: centerPhoneWidth,
+          transform: centerPhoneTransform,
           zIndex: 20,
+          flex: '0 0 auto',
         }}
-        onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.12)'}
-        onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1.08)'}
+        onMouseEnter={(e) => {
+          if (!isMobile) e.currentTarget.style.transform = 'scale(1.12)';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.transform = centerPhoneTransform;
+        }}
       >
         {/* Notch */}
         <div style={styles.notch}>
@@ -371,7 +398,7 @@ export function PhoneMockups({ style }: PhoneMockupsProps) {
         </div>
 
         {/* Screen */}
-        <div style={{ ...styles.screen, height: '620px' }}>
+        <div style={{ ...styles.screen, height: centerScreenHeight }}>
           {/* Status Bar */}
           <div style={styles.statusBar}>
             <div style={styles.time}>9:41</div>
@@ -476,11 +503,16 @@ export function PhoneMockups({ style }: PhoneMockupsProps) {
       <div
         style={{
           ...styles.iphoneFrame,
-          width: '280px',
-          transform: 'rotate(6deg) translateY(24px)',
+          width: rightPhoneWidth,
+          transform: rightPhoneTransform,
+          flex: '0 0 auto',
         }}
-        onMouseEnter={(e) => e.currentTarget.style.transform = 'rotate(0deg) translateY(0) scale(1.02)'}
-        onMouseLeave={(e) => e.currentTarget.style.transform = 'rotate(6deg) translateY(24px)'}
+        onMouseEnter={(e) => {
+          if (!isMobile) e.currentTarget.style.transform = 'rotate(0deg) translateY(0) scale(1.02)';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.transform = rightPhoneTransform;
+        }}
       >
         {/* Notch */}
         <div style={styles.notch}>
@@ -489,7 +521,7 @@ export function PhoneMockups({ style }: PhoneMockupsProps) {
         </div>
 
         {/* Screen */}
-        <div style={{ ...styles.screen, height: '580px' }}>
+        <div style={{ ...styles.screen, height: sideScreenHeight }}>
           {/* Status Bar */}
           <div style={styles.statusBar}>
             <div style={styles.time}>9:41</div>
@@ -570,17 +602,19 @@ export function PhoneMockups({ style }: PhoneMockupsProps) {
       </div>
 
       {/* Shadow Effect */}
-      <div style={{
-        position: 'absolute' as const,
-        bottom: '-40px',
-        left: '50%',
-        transform: 'translateX(-50%)',
-        width: '600px',
-        height: '100px',
-        background: 'radial-gradient(ellipse, rgba(0, 0, 0, 0.15) 0%, transparent 70%)',
-        filter: 'blur(20px)',
-        zIndex: -1,
-      }} />
+      {!isMobile && (
+        <div style={{
+          position: 'absolute' as const,
+          bottom: '-40px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          width: '600px',
+          height: '100px',
+          background: 'radial-gradient(ellipse, rgba(0, 0, 0, 0.15) 0%, transparent 70%)',
+          filter: 'blur(20px)',
+          zIndex: -1,
+        }} />
+      )}
 
       <style>
         {`

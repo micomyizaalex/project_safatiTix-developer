@@ -16,6 +16,8 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { DEFAULT_PLAN_PERMISSIONS } from '../../utils/subscriptionPlans';
 import AdminNotificationBell from '../../components/AdminNotificationBell';
+import AdminFleetTracking from '../../components/AdminFleetTracking';
+import ComplaintManagementAdmin from '../../components/ComplaintManagementAdmin';
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 // ==================== BRAND COLORS ====================
@@ -298,6 +300,7 @@ export default function AdminDashboard() {
     { id: 'buses',           icon: Bus,             label: 'Buses',  badge: buses.length > 0 ? buses.length.toString() : null },
     { id: 'rura-routes',     icon: Navigation,      label: 'RURA Routes',     badge: null },
     { id: 'tickets',         icon: Ticket,          label: 'Tickets',         badge: dashboardStats.ticketsToday > 0 ? dashboardStats.ticketsToday.toString() : null },
+    { id: 'complaints',      icon: AlertTriangle,   label: 'Complaints',      badge: null },
     { id: 'tracking',        icon: MapPin,          label: 'Live Tracking',   badge: null },
     { id: 'analytics',       icon: BarChart3,       label: 'Analytics',       badge: null },
     { id: 'activity-logs',   icon: Activity,        label: 'Activity Logs',   badge: null },
@@ -454,6 +457,7 @@ export default function AdminDashboard() {
           {activeModule === 'buses' && <BusManagement buses={buses} />}
           {activeModule === 'rura-routes' && <RuraRoutesManagement />}
           {activeModule === 'tickets' && <TicketManagement tickets={recentTickets} />}
+          {activeModule === 'complaints' && <ComplaintManagementAdmin />}
           {activeModule === 'tracking' && <LiveTracking />}
           {activeModule === 'analytics' && (
             <Analytics
@@ -2739,14 +2743,7 @@ function LiveTracking() {
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       <h1 className="text-2xl lg:text-3xl font-black font-['Montserrat'] text-[#2B2D42]">Live Fleet Tracking</h1>
-      
-      <div className="bg-white rounded-2xl p-8 border border-gray-200 aspect-video flex items-center justify-center">
-        <div className="text-center">
-          <MapPin className="w-16 h-16 text-[#0077B6] mx-auto mb-4" />
-          <h3 className="text-xl font-bold text-gray-900 mb-2">Map Integration</h3>
-          <p className="text-gray-600">GPS tracking map coming soon</p>
-        </div>
-      </div>
+      <AdminFleetTracking />
     </div>
   );
 }

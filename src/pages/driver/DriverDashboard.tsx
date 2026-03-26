@@ -42,6 +42,7 @@ export default function DriverDashboard() {
   const [recentPassengersState, setRecentPassengersState] = useState<any[]>([]);
   const [activeManifest, setActiveManifest] = useState<any | null>(null);
   const [operationalStatuses, setOperationalStatuses] = useState<string[]>([]);
+  const [dashboardDebugMessages, setDashboardDebugMessages] = useState<string[]>([]);
   const [tripStatusUpdating, setTripStatusUpdating] = useState<string | null>(null);
   const [selectedScheduleForTracking, setSelectedScheduleForTracking] = useState<any | null>(null);
   const [sessionScannedTickets, setSessionScannedTickets] = useState<Set<string>>(new Set());
@@ -61,13 +62,34 @@ export default function DriverDashboard() {
   const refreshDashboard = async () => {
     if (!accessToken) return;
     const res = await fetch(`/api/driver/dashboard`, { headers: { Authorization: `Bearer ${accessToken}` } });
-    if (!res.ok) return;
+    if (!res.ok) {
+      const payload = await res.json().catch(() => null);
+      setDashboardDebugMessages([payload?.message || payload?.error || `Failed to load dashboard (${res.status})`]);
+      return;
+    }
     const j = await res.json();
-    const s = j.stats || {};
-    setDashboardStats({ tripsCompleted: s.completed || 0, activeTrips: s.active || 0, totalPassengers: s.passengers || 0, revenue: s.revenue || 0 });
+    const statsPayload = j.stats || {};
+    const completedTrips = Number(j.completedTrips ?? statsPayload.completed ?? 0);
+    const activeTrips = Number(j.activeTrips ?? statsPayload.active ?? 0);
+    const totalPassengers = Number(j.passengers ?? statsPayload.passengers ?? 0);
+    const revenue = Number(j.revenue ?? statsPayload.revenue ?? 0);
+
+    setDashboardStats({ tripsCompleted: completedTrips, activeTrips, totalPassengers, revenue });
+    if (j.assignedBus && typeof j.assignedBus === 'object') {
+      setAssignedBus({
+        id: j.assignedBus.busId || j.assignedBus.id,
+        plate_number: j.assignedBus.plateNumber || j.assignedBus.plate_number,
+        model: j.assignedBus.model,
+        capacity: j.assignedBus.capacity,
+        status: j.assignedBus.status,
+      });
+    } else {
+      setAssignedBus(null);
+    }
     setUpcomingTrips(j.upcoming || []);
     setRecentPassengersState(j.recentCheckins || []);
     setOperationalStatuses(j.operationalStatuses || []);
+    setDashboardDebugMessages(Array.isArray(j?.debug?.messages) ? j.debug.messages.filter(Boolean) : []);
     if (j.activeTrip) {
       setActiveTrip(j.activeTrip);
       setSelectedScheduleForTracking((currentSchedule: any | null) => currentSchedule || j.activeTrip);
@@ -176,14 +198,33 @@ export default function DriverDashboard() {
           headers: { Authorization: `Bearer ${accessToken}` },
         });
         if (!mounted) return;
-        if (!res.ok) {
-          const txt = await res.text().catch(() => null);
-          throw new Error(txt || `Failed to load trips: ${res.status}`);
+
+        let loaded: any[] = [];
+        if (res.ok) {
+          const j = await res.json();
+          if (!mounted) return;
+          loaded = Array.isArray(j) ? j : (j.schedules || j.trips || j.data || []);
         }
 
-        const j = await res.json();
-        if (!mounted) return;
-        let loaded = Array.isArray(j) ? j : (j.schedules || j.trips || j.data || []);
+        if (!Array.isArray(loaded) || loaded.length === 0) {
+          const dashboardRes = await fetch('/api/driver/dashboard', {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          }).catch(() => null);
+
+          if (dashboardRes && dashboardRes.ok) {
+            const dashboardJson = await dashboardRes.json().catch(() => ({}));
+            const dashboardTrips = [dashboardJson.activeTrip, ...(dashboardJson.upcoming || [])]
+              .filter(Boolean)
+              .reduce((acc: any[], trip: any) => {
+                if (!acc.some((item) => String(item.id) === String(trip.id))) {
+                  acc.push(trip);
+                }
+                return acc;
+              }, []);
+
+            loaded = dashboardTrips;
+          }
+        }
 
         if ((!Array.isArray(loaded) || loaded.length === 0) && bus.id) {
           loaded = await loadTripsForBus(bus.id);
@@ -235,6 +276,19 @@ export default function DriverDashboard() {
     if (!accessToken || !activeTrip?.id) return;
     if (activeManifest?.scheduleId === activeTrip.id || activeManifest?.trip?.id === activeTrip.id) return;
     refreshManifest(activeTrip.id).catch(() => undefined);
+  }, [accessToken, activeTrip?.id]);
+
+  useEffect(() => {
+    if (!accessToken) return;
+
+    const pollId = window.setInterval(() => {
+      refreshDashboard().catch(() => undefined);
+      if (activeTrip?.id) {
+        refreshManifest(activeTrip.id).catch(() => undefined);
+      }
+    }, 15000);
+
+    return () => window.clearInterval(pollId);
   }, [accessToken, activeTrip?.id]);
 
   const handleTripStatusAction = async (trip: any, action: 'start' | 'end') => {
@@ -478,7 +532,7 @@ export default function DriverDashboard() {
       {/* ========== MAIN CONTENT ========== */}
       <main className="lg:ml-64 pt-16 lg:pt-0 min-h-screen">
         <div className="p-4 lg:p-6 xl:p-8">
-          {activeView === 'dashboard' && <DashboardView setShowScanner={setShowScanner} driverName={driverName} schedules={schedules} user={user} activeTrip={activeTrip} upcomingTrips={upcomingTrips} dashboardStats={dashboardStats} recentPassengers={recentPassengersState} manifest={activeManifest} onStartTrip={handleStartTrip} onUpdateOperationalStatus={handleOperationalStatusUpdate} operationalStatuses={operationalStatuses} tripStatusUpdating={tripStatusUpdating} />}
+          {activeView === 'dashboard' && <DashboardView setShowScanner={setShowScanner} driverName={driverName} schedules={schedules} user={user} activeTrip={activeTrip} upcomingTrips={upcomingTrips} dashboardStats={dashboardStats} recentPassengers={recentPassengersState} manifest={activeManifest} onStartTrip={handleStartTrip} onUpdateOperationalStatus={handleOperationalStatusUpdate} operationalStatuses={operationalStatuses} tripStatusUpdating={tripStatusUpdating} debugMessages={dashboardDebugMessages} />}
           {activeView === 'trips' && <TripsView trips={trips} loading={tripsLoading} error={tripsError} onTripAction={handleTripStatusAction} assignedBus={assignedBus} actionTripId={tripActionId} />}
           {activeView === 'passengers' && <PassengersView setShowScanner={setShowScanner} manifest={activeManifest} activeTrip={activeTrip} />}
           {activeView === 'tracking' && <TrackingView schedule={selectedScheduleForTracking || activeTrip} onTripStarted={handleTripStarted} onTripEnded={handleTripEnded} />}
@@ -506,8 +560,32 @@ export default function DriverDashboard() {
 }
 
 // ==================== DASHBOARD VIEW ====================
-function DashboardView({ setShowScanner, driverName, schedules, user, activeTrip, upcomingTrips, dashboardStats, recentPassengers, manifest, onStartTrip, onUpdateOperationalStatus, operationalStatuses, tripStatusUpdating }: { setShowScanner: any, driverName: any, schedules: any[], user: any, activeTrip: any, upcomingTrips: any[], dashboardStats: any, recentPassengers: any[], manifest: any, onStartTrip?: (schedule: any) => void, onUpdateOperationalStatus?: (schedule: any, nextStatus: string) => void, operationalStatuses?: string[], tripStatusUpdating?: string | null }) {
+function DashboardView({ setShowScanner, driverName, schedules, user, activeTrip, upcomingTrips, dashboardStats, recentPassengers, manifest, onStartTrip, onUpdateOperationalStatus, operationalStatuses, tripStatusUpdating, debugMessages }: { setShowScanner: any, driverName: any, schedules: any[], user: any, activeTrip: any, upcomingTrips: any[], dashboardStats: any, recentPassengers: any[], manifest: any, onStartTrip?: (schedule: any) => void, onUpdateOperationalStatus?: (schedule: any, nextStatus: string) => void, operationalStatuses?: string[], tripStatusUpdating?: string | null, debugMessages?: string[] }) {
   const navigate = _useNavigate();
+  const toFiniteNumber = (value: any): number | null => {
+    if (value === null || value === undefined || value === '') return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
+  const resolveSeatStats = (trip: any) => {
+    const totalSeats = toFiniteNumber(trip.totalSeats ?? trip.total ?? trip.seatCapacity ?? trip.capacity ?? trip.bus?.capacity);
+    const availableSeats = toFiniteNumber(trip.seatsAvailable ?? trip.availableSeats ?? trip.available_seats);
+
+    const bookedSeats = toFiniteNumber(
+      trip.bookedSeats
+      ?? trip.booked_seats
+      ?? trip.passengers
+      ?? trip.soldSeats
+      ?? (totalSeats !== null && availableSeats !== null ? Math.max(totalSeats - availableSeats, 0) : null)
+    );
+
+    const leftSeats = totalSeats !== null && bookedSeats !== null
+      ? Math.max(totalSeats - bookedSeats, 0)
+      : null;
+
+    return { totalSeats, bookedSeats, leftSeats };
+  };
   const activePassengers = manifest?.stats?.total ?? activeTrip?.passengers ?? 0;
   const activeBoarded = manifest?.stats?.boarded ?? recentPassengers.filter((passenger) => passenger.checked).length;
   const availableStatuses = Array.isArray(operationalStatuses) && operationalStatuses.length > 0 ? operationalStatuses : ['ASSIGNED', 'BOARDING', 'DEPARTED', 'ON_ROUTE', 'ARRIVING', 'COMPLETED'];
@@ -532,6 +610,16 @@ function DashboardView({ setShowScanner, driverName, schedules, user, activeTrip
   const recentCheckinList: any[] = manifestRecentPassengers.length > 0 ? manifestRecentPassengers : recentPassengers;
   return (
     <div className="max-w-7xl mx-auto space-y-6">
+      {Array.isArray(debugMessages) && debugMessages.length > 0 && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3">
+          <div className="text-xs font-black text-amber-900 mb-1">Debug Metrics Messages</div>
+          <div className="space-y-1 text-xs text-amber-800">
+            {debugMessages.map((message, index) => (
+              <div key={`${message}-${index}`}>- {message}</div>
+            ))}
+          </div>
+        </div>
+      )}
       
       {/* Header Section */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
@@ -675,16 +763,26 @@ function DashboardView({ setShowScanner, driverName, schedules, user, activeTrip
                 <div className="flex items-center justify-between">
                     <div className="text-sm text-slate-600">
                     {(() => {
-                      const passengers = typeof trip.passengers === 'number' ? trip.passengers : (typeof trip.soldSeats === 'number' ? trip.soldSeats : (trip.seatsAvailable !== undefined && trip.total ? (trip.total - trip.seatsAvailable) : (trip.totalSeats ? '—' : '—')));
-                      const total = trip.total || trip.totalSeats || '—';
-                      return <span className="font-semibold">{(passengers !== null && passengers !== undefined) ? passengers : '—'}/{total}</span>;
+                      const { totalSeats, bookedSeats, leftSeats } = resolveSeatStats(trip);
+
+                      if (totalSeats === null || bookedSeats === null) {
+                        return <span className="font-semibold">—/—</span>;
+                      }
+
+                      return (
+                        <span className="font-semibold">
+                          {bookedSeats}/{totalSeats} <span className="text-slate-500">({leftSeats} left)</span>
+                        </span>
+                      );
                     })()} seats
                   </div>
                   <div className="flex gap-1">
                     {[...Array(5)].map((_, i) => {
-                      const passengers = typeof trip.passengers === 'number' ? trip.passengers : (typeof trip.soldSeats === 'number' ? trip.soldSeats : null);
-                      const total = trip.total || trip.totalSeats || null;
-                      const filled = (passengers !== null && total) ? Math.floor((passengers / total) * 5) : 0;
+                      const { totalSeats, bookedSeats } = resolveSeatStats(trip);
+
+                      const filled = (bookedSeats !== null && totalSeats && totalSeats > 0)
+                        ? Math.floor((bookedSeats / totalSeats) * 5)
+                        : 0;
                       return <div key={i} className={`w-1.5 h-4 rounded-full ${i < filled ? 'bg-[#0077B6]' : 'bg-slate-200'}`}></div>;
                     })}
                   </div>
@@ -1144,11 +1242,101 @@ function TrackingView({ schedule, onTripStarted, onTripEnded }: { schedule: any 
 
 // ==================== PROFILE VIEW ====================
 function ProfileView({ driverName, driverContext, companyName, tripsCount }: { driverName: string | null, driverContext: any, companyName: string | null, tripsCount: number }) {
-  const { user } = useAuth();
+  const { user, accessToken } = useAuth();
+  const [isEditing, setIsEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+  const [form, setForm] = useState({
+    fullName: '',
+    phoneNumber: '',
+    email: '',
+    location: '',
+  });
+
+  useEffect(() => {
+    setForm({
+      fullName: String(driverContext?.name || driverName || (user as any)?.full_name || (user as any)?.name || '').trim(),
+      phoneNumber: String((user as any)?.phone_number || driverContext?.phone || '').trim(),
+      email: String((user as any)?.email || driverContext?.email || '').trim(),
+      location: String(driverContext?.location || '').trim(),
+    });
+  }, [driverContext, driverName, user]);
+
+  const onChangeField = (field: 'fullName' | 'phoneNumber' | 'email' | 'location', value: string) => {
+    setForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleSave = async () => {
+    if (!accessToken) {
+      setSaveError('Authentication required. Please log in again.');
+      return;
+    }
+
+    setSaving(true);
+    setSaveError(null);
+    setSaveSuccess(null);
+
+    try {
+      const response = await fetch('/api/driver/profile', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          fullName: form.fullName.trim(),
+          phoneNumber: form.phoneNumber.trim(),
+          email: form.email.trim(),
+          location: form.location.trim(),
+        }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.message || payload?.error || 'Failed to save profile');
+      }
+
+      const profile = payload?.profile || {};
+      setForm((prev) => ({
+        ...prev,
+        fullName: String(profile.fullName || prev.fullName || '').trim(),
+        phoneNumber: String(profile.phoneNumber || prev.phoneNumber || '').trim(),
+        email: String(profile.email || prev.email || '').trim(),
+        location: String(profile.location || prev.location || '').trim(),
+      }));
+
+      if (Array.isArray(payload?.warnings) && payload.warnings.length > 0) {
+        setSaveSuccess(`Profile updated with note: ${payload.warnings[0]}`);
+      } else {
+        setSaveSuccess('Profile updated successfully.');
+      }
+      setIsEditing(false);
+    } catch (error: any) {
+      setSaveError(error.message || 'Failed to save profile');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const onCancel = () => {
+    setIsEditing(false);
+    setSaveError(null);
+    setSaveSuccess(null);
+    setForm({
+      fullName: String(driverContext?.name || driverName || (user as any)?.full_name || (user as any)?.name || '').trim(),
+      phoneNumber: String((user as any)?.phone_number || driverContext?.phone || '').trim(),
+      email: String((user as any)?.email || driverContext?.email || '').trim(),
+      location: String(driverContext?.location || '').trim(),
+    });
+  };
+
+  const displayName = form.fullName || driverContext?.name || driverName || (user as any)?.full_name || (user as any)?.name || 'Driver';
+
   const contactItems = [
-    { icon: Phone, label: 'Phone', value: (user as any)?.phone_number || driverContext?.phone || 'Not available' },
-    { icon: Mail, label: 'Email', value: (user as any)?.email || driverContext?.email || 'Not available' },
-    { icon: MapPin, label: 'Location', value: 'Not available' },
+    { icon: Phone, label: 'Phone', value: form.phoneNumber || 'Not available' },
+    { icon: Mail, label: 'Email', value: form.email || 'Not available' },
+    { icon: MapPin, label: 'Location', value: form.location || 'Not available' },
   ];
 
   return (
@@ -1162,14 +1350,45 @@ function ProfileView({ driverName, driverContext, companyName, tripsCount }: { d
             <User className="w-10 h-10 text-white" />
           </div>
           <div className="flex-1">
-            <div className="text-2xl font-black mb-1">{driverContext?.name || driverName || (user as any)?.full_name || (user as any)?.name || 'Driver'}</div>
+            {isEditing ? (
+              <input
+                value={form.fullName}
+                onChange={(event) => onChangeField('fullName', event.target.value)}
+                className="w-full max-w-md rounded-lg border border-white/40 bg-white/20 px-3 py-2 text-white placeholder:text-white/70 outline-none"
+                placeholder="Full name"
+              />
+            ) : (
+              <div className="text-2xl font-black mb-1">{displayName}</div>
+            )}
             <div className="text-white/80 text-sm">{companyName || (user as any)?.companyName || 'No company assigned'}</div>
           </div>
-          <button className="bg-white/20 border-2 border-white/30 text-white px-6 py-2 rounded-lg font-bold hover:bg-white/30 transition-all">
-            Edit
-          </button>
+          {!isEditing ? (
+            <button onClick={() => setIsEditing(true)} className="bg-white/20 border-2 border-white/30 text-white px-6 py-2 rounded-lg font-bold hover:bg-white/30 transition-all">
+              Edit
+            </button>
+          ) : (
+            <div className="flex gap-2">
+              <button onClick={onCancel} className="bg-transparent border-2 border-white/30 text-white px-4 py-2 rounded-lg font-bold hover:bg-white/20 transition-all">
+                Cancel
+              </button>
+              <button onClick={handleSave} disabled={saving} className="bg-white text-[#0077B6] px-4 py-2 rounded-lg font-bold hover:bg-white/90 transition-all disabled:opacity-60">
+                {saving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          )}
         </div>
       </div>
+
+      {saveError && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {saveError}
+        </div>
+      )}
+      {saveSuccess && (
+        <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+          {saveSuccess}
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid lg:grid-cols-3 gap-4">
@@ -1201,7 +1420,16 @@ function ProfileView({ driverName, driverContext, companyName, tripsCount }: { d
               </div>
               <div className="flex-1">
                 <div className="text-xs text-slate-500 mb-1">{item.label}</div>
-                <div className="font-semibold text-slate-900">{item.value}</div>
+                {!isEditing ? (
+                  <div className="font-semibold text-slate-900">{item.value}</div>
+                ) : (
+                  <input
+                    value={item.label === 'Phone' ? form.phoneNumber : item.label === 'Email' ? form.email : form.location}
+                    onChange={(event) => onChangeField(item.label === 'Phone' ? 'phoneNumber' : item.label === 'Email' ? 'email' : 'location', event.target.value)}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-[#0077B6]"
+                    placeholder={item.label}
+                  />
+                )}
               </div>
             </div>
           ))}
@@ -1248,6 +1476,49 @@ function ScannerModal({
     };
   }, []);
 
+  const waitForVideoElement = async (maxWaitMs = 1200) => {
+    const start = Date.now();
+    while (!videoRef.current && Date.now() - start < maxWaitMs) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    return videoRef.current;
+  };
+
+  const startCamera = async () => {
+    console.log('Starting camera...');
+    console.log('Media devices:', navigator.mediaDevices);
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error('Camera not supported on this device/browser.');
+    }
+
+    const videoEl = await waitForVideoElement();
+    if (!videoEl) {
+      throw new Error('Video element is not ready.');
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: 'environment' },
+        },
+      });
+
+      streamRef.current = stream;
+      videoEl.srcObject = stream;
+      await videoEl.play();
+      return;
+    } catch (err) {
+      console.error('Camera access failed:', err);
+    }
+
+    // Fallback to any available camera.
+    const fallbackStream = await navigator.mediaDevices.getUserMedia({ video: true });
+    streamRef.current = fallbackStream;
+    videoEl.srcObject = fallbackStream;
+    await videoEl.play();
+  };
+
   const startScanning = async () => {
     setScanning(true);
     setError(null);
@@ -1257,53 +1528,51 @@ function ScannerModal({
     lastScannedCodeRef.current = null;
 
     try {
-      const videoInputDevices = await BrowserQRCodeReader.listVideoInputDevices();
+      // Allow modal/scanning view to render the video element before camera start.
+      await new Promise((resolve) => setTimeout(resolve, 80));
 
-      // Some browsers do not expose stable device IDs until permission is granted.
-      // In that case, pass undefined and let ZXing use the default/environment camera.
-      let selectedDeviceId: string | undefined;
-      if (videoInputDevices.length > 0) {
-        const backCamera = videoInputDevices.find((d) =>
-          /back|rear|environment/i.test(d.label || '')
-        );
-        selectedDeviceId = backCamera?.deviceId || videoInputDevices[0]?.deviceId || undefined;
+      await startCamera();
+
+      if (!readerRef.current || !videoRef.current) {
+        throw new Error('Scanner is not ready');
       }
 
-      if (readerRef.current && videoRef.current) {
-        const controls = await readerRef.current.decodeFromVideoDevice(
-          selectedDeviceId,
-          videoRef.current,
-          async (qrResult, err) => {
-            if (qrResult) {
-              const qrCode = qrResult.getText();
-              
-              // Prevent duplicate processing of the same code
-              if (processingRef.current || lastScannedCodeRef.current === qrCode) {
-                return;
-              }
-              
-              lastScannedCodeRef.current = qrCode;
-              await handleScan(qrCode);
+      // Start QR decoding only after camera stream is attached and video is playing.
+      await readerRef.current.decodeFromVideoElement(
+        videoRef.current,
+        async (qrResult, err) => {
+          if (qrResult) {
+            const qrCode = qrResult.getText();
+
+            // Prevent duplicate processing of the same code
+            if (processingRef.current || lastScannedCodeRef.current === qrCode) {
+              return;
             }
-            const errMessage = (err as any)?.message;
-            if (err && !(typeof errMessage === 'string' && errMessage.includes('NotFoundException'))) {
-              console.error('QR scanning error:', err);
-            }
+
+            lastScannedCodeRef.current = qrCode;
+            await handleScan(qrCode);
           }
-        );
-        // Store the video stream for cleanup
-        if (videoRef.current.srcObject instanceof MediaStream) {
-          streamRef.current = videoRef.current.srcObject;
+          const errMessage = (err as any)?.message;
+          if (err && !(typeof errMessage === 'string' && errMessage.includes('NotFoundException'))) {
+            console.error('QR scanning error:', err);
+          }
         }
-      }
+      );
     } catch (err: any) {
       console.error('Failed to start scanner:', err);
-      setError(err.message || 'Failed to access camera');
+      setError(err.message || 'Failed to access camera. Make sure camera permission is granted and no other app is using it.');
       setScanning(false);
     }
   };
 
   const stopScanning = () => {
+    if (readerRef.current) {
+      try {
+        (readerRef.current as any).reset?.();
+      } catch {
+        // Reader may already be stopped.
+      }
+    }
     // Stop video stream
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
@@ -1344,13 +1613,13 @@ function ScannerModal({
 
     try {
       console.log('📡 Calling backend to validate ticket...');
-      const response = await fetch(`/api/driver/scan`, {
+      const response = await fetch(`/api/tickets/validate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${accessToken}`,
         },
-        body: JSON.stringify({ qrCode, scheduleId }),
+        body: JSON.stringify({ qrCodeData: qrCode, tripId: scheduleId }),
       });
 
       const data = await response.json();
@@ -1381,9 +1650,15 @@ function ScannerModal({
         // FAILURE: Invalid ticket from backend
         console.log('❌ Invalid ticket:', data.reason);
         
-        // Check if it's "already used" - could mean another driver scanned it
-        if (data.reason === 'ALREADY_USED') {
-          setScanMessage('Ticket already used by another driver ⚠️');
+        // Differentiate already-used causes based on backend reason.
+        if (data.reason === 'ALREADY_USED_SELF') {
+          setScanMessage('Ticket already scanned in this trip ⚠️');
+        } else if (data.reason === 'ALREADY_USED') {
+          setScanMessage(data.message || 'Ticket already used ⚠️');
+        } else if (data.reason === 'TRIP_MISMATCH') {
+          setScanMessage('Ticket is for another trip ❌');
+        } else if (data.reason === 'PENDING_PAYMENT') {
+          setScanMessage('Payment is pending for this ticket ⏳');
         } else if (data.reason === 'TRIP_NOT_ACTIVE') {
           setScanMessage('Trip not active - start the trip first ⚠️');
         } else if (data.reason === 'TICKET_CANCELLED') {
@@ -1455,6 +1730,7 @@ function ScannerModal({
                 autoPlay
                 playsInline
                 muted
+                style={{ width: '100%', height: '100%' }}
               />
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                 <div className="w-48 h-48 border-4 border-white/50 rounded-lg"></div>

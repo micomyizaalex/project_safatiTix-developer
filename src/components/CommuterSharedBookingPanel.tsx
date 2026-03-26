@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import TripSearchForm from './TripSearchForm';
 import TripResults, { TripResult } from './TripResults';
 import SeatSelection from './SeatSelection';
@@ -33,6 +34,7 @@ const safeJson = async (res: Response) => {
 };
 
 export default function CommuterSharedBookingPanel() {
+  const navigate = useNavigate();
   const [step, setStep] = useState<Step>('search');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -207,50 +209,23 @@ export default function CommuterSharedBookingPanel() {
     setError(null);
     setBooking(true);
     try {
-      const token = localStorage.getItem('token');
-      const res = await fetch('/api/book-ticket', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify({
-          schedule_id: selectedTrip.schedule_id,
-          from,
-          to,
-          seat_number: selectedSeat,
-          passenger_name: passengerName.trim(),
-          passenger_phone: passengerPhone.trim() || undefined
-        })
-      });
-      const json = await safeJson(res);
-
-      if (!res.ok) {
-        // Fallback for older backend.
-        const legacyRes = await fetch('/api/shared/tickets/book', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {})
+      navigate('/dashboard/commuter/payment', {
+        state: {
+          selectedSeats: [String(selectedSeat)],
+          scheduleId: selectedTrip.schedule_id,
+          price: Number(selectedTrip.price || 0),
+          fromStop: from,
+          toStop: to,
+          scheduleDetails: {
+            routeFrom: from,
+            routeTo: to,
+            departureTime: selectedTrip.departure_time || selectedTrip.time || new Date().toISOString(),
+            scheduleDate: selectedTrip.travel_date || selectedTrip.date || date,
+            busPlateNumber: selectedTrip.plate_number || selectedTrip.bus_plate || 'TBA',
+            companyName: selectedTrip.company_name || 'SafariTix',
           },
-          body: JSON.stringify({
-            schedule_id: selectedTrip.schedule_id,
-            from_stop: from,
-            to_stop: to,
-            seat_number: selectedSeat,
-            passenger_name: passengerName.trim(),
-            passenger_phone: passengerPhone.trim() || undefined
-          })
-        });
-        const legacyJson = await safeJson(legacyRes);
-        if (!legacyRes.ok) throw new Error(legacyJson?.message || 'Booking failed');
-        setSuccessRef(legacyJson?.ticket?.booking_ref || 'N/A');
-        setStep('done');
-        return;
-      }
-
-      setSuccessRef(json?.ticket?.booking_ref || 'N/A');
-      setStep('done');
+        },
+      });
     } catch (e: any) {
       setError(e.message || 'Booking failed');
     } finally {

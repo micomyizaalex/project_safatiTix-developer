@@ -8,8 +8,8 @@ const SAFARITIX = {
 
 export default function CompanyLayout() {
   const styles: Record<string, CSSProperties> = {
-    wrapper: { display: 'flex', minHeight: '100vh', background: '#F8FAFC' },
-    content: { flex: 1, padding: 20 },
+    wrapper: { display: 'flex', minHeight: '100vh', width: '100%', maxWidth: '100%', margin: 0, background: '#F8FAFC' },
+    content: { flex: 1, width: '100%', margin: 0, padding: 0 },
   };
 
   return (

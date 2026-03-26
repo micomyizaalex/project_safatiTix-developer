@@ -1,4 +1,4 @@
-const DEFAULT_BACKEND_ORIGIN = 'http://localhost:5000';
+const DEFAULT_BACKEND_ORIGIN = 'https://backend-v2-wjcs.onrender.com';
 
 const trimTrailingSlash = (value: string) => value.replace(/\/+$/, '');
 
@@ -9,8 +9,13 @@ const normalizePath = (path: string) => {
 
 const rawApiBase = String(import.meta.env.VITE_API_BASE_URL || '').trim();
 const normalizedApiBase = rawApiBase ? trimTrailingSlash(rawApiBase) : '';
+const forceDirectApiInDev = String(import.meta.env.VITE_FORCE_DIRECT_API_IN_DEV || '').trim().toLowerCase() === 'true';
+const shouldUseConfiguredApiOrigin = Boolean(normalizedApiBase) && (!import.meta.env.DEV || forceDirectApiInDev);
 
-export const API_ORIGIN = normalizedApiBase || (import.meta.env.PROD ? DEFAULT_BACKEND_ORIGIN : '');
+// In local dev, keep `/api/*` same-origin so Vite's proxy handles CORS for us.
+export const API_ORIGIN = shouldUseConfiguredApiOrigin
+  ? normalizedApiBase
+  : (import.meta.env.PROD ? DEFAULT_BACKEND_ORIGIN : '');
 export const SOCKET_ORIGIN = API_ORIGIN || DEFAULT_BACKEND_ORIGIN;
 
 export const apiUrl = (path: string) => {

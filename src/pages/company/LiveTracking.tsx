@@ -3,6 +3,7 @@ import { useAuth } from '../components/AuthContext';
 import { MapPin, Navigation, Clock, Users, Bus as BusIcon, Activity } from 'lucide-react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
+import { API_URL } from '../../config';
 
 const SAFARITIX = {
   primary: '#0077B6',
@@ -64,8 +65,6 @@ export default function LiveTracking() {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const markers = useRef<{ [key: string]: mapboxgl.Marker }>({});
-  const API_URL = import.meta.env.VITE_API_URL || 'https://backend-v2-wjcs.onrender.com/api';
-
   // Initialize map
   useEffect(() => {
     if (!hasMapboxToken || !mapContainer.current) return;

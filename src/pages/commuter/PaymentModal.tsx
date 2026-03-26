@@ -11,7 +11,7 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { CreditCard, Check, Smartphone, Phone, ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
 import { useAuth } from '../../components/AuthContext';
-import { API_URL } from '../../utils/supabase-client';
+import { API_URL } from '../../config';
 
 interface PaymentModalProps {
   open: boolean;

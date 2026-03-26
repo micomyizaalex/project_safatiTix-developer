@@ -2,6 +2,7 @@ import { useState, useEffect, CSSProperties } from 'react';
 import { useAuth } from '../components/AuthContext';
 import { DollarSign, TrendingUp, TrendingDown, Calendar, Download, CreditCard, RefreshCw } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { API_URL } from '../../config';
 
 const SAFARITIX = {
   primary: '#0077B6',
@@ -46,8 +47,6 @@ export default function Revenue() {
     { day: 'Sat', value: 0 },
     { day: 'Sun', value: 0 },
   ]);
-  const API_URL = import.meta.env.VITE_API_URL || 'https://backend-v2-wjcs.onrender.com/api';
-
   useEffect(() => {
     fetchRevenueData();
   }, [filterPeriod]);

@@ -1,6 +1,7 @@
 import { useState, useEffect, CSSProperties } from 'react';
 import { useAuth } from '../components/AuthContext';
 import { Users, Search, Plus, Edit2, Trash2, Phone, CreditCard } from 'lucide-react';
+import { API_URL } from '../../config';
 
 const SAFARITIX = {
   primary: '#0077B6',
@@ -54,8 +55,6 @@ export default function Drivers() {
   const [availableBuses, setAvailableBuses] = useState<CompanyBus[]>([]);
   const [selectedBusIds, setSelectedBusIds] = useState<string[]>([]);
   const [initialBusIds, setInitialBusIds] = useState<string[]>([]);
-  const API_URL = import.meta.env.VITE_API_URL || 'https://backend-v2-wjcs.onrender.com/api';
-
   useEffect(() => {
     fetchDrivers();
   }, []);

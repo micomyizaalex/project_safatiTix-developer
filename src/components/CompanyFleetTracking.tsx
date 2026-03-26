@@ -4,6 +4,7 @@ import { io, Socket } from 'socket.io-client';
 import L from 'leaflet';
 import { MapPin, Loader2, AlertCircle, Bus, Navigation, Activity, Clock, User, MapPinned } from 'lucide-react';
 import 'leaflet/dist/leaflet.css';
+import { API_BASE_URL } from '../config';
 import { SOCKET_ORIGIN, socketOptions } from '../utils/network';
 
 // Fix for default marker icons in React-Leaflet
@@ -111,7 +112,7 @@ export default function CompanyFleetTracking({ token, activeBuses }: CompanyFlee
       setLoading(true);
       setError(null);
 
-      const baseUrl = import.meta.env.VITE_API_BASE_URL || 'https://backend-v2-wjcs.onrender.com';
+      const baseUrl = API_BASE_URL;
 
       // Fetch all company schedules
       const schedulesRes = await fetch(`${baseUrl}/api/company/schedules`, {
@@ -370,7 +371,7 @@ export default function CompanyFleetTracking({ token, activeBuses }: CompanyFlee
     }
 
     try {
-      const baseUrl = import.meta.env.VITE_API_BASE_URL || 'https://backend-v2-wjcs.onrender.com';
+      const baseUrl = API_BASE_URL;
       const res = await fetch(`${baseUrl}/api/tracking/schedule/${bus.scheduleId}/location`, {
         headers: {
           Authorization: `Bearer ${token}`,

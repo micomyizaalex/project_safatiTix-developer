@@ -2,8 +2,7 @@ import React from 'react';
 import axios from 'axios';
 import { Bell, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+import { API_URL as API_BASE_URL } from '../config';
 
 interface AdminNotification {
   id: string;

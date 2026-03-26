@@ -1,9 +1,8 @@
 import React from 'react';
 import axios from 'axios';
 import { AlertCircle, Building2, Check, Crown, Loader2, Rocket, ShieldCheck, Sparkles } from 'lucide-react';
+import { API_URL as API_BASE_URL } from '../../config';
 import { PLAN_PERMISSION_PRESETS, type SubscriptionPlan } from '../../utils/subscriptionPlans';
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 const PLAN_ORDER: SubscriptionPlan[] = ['Starter', 'Growth', 'Enterprise'];
 
 type RequestStatus = 'pending' | 'approved' | 'rejected';

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, CSSProperties } from 'react';
 import { useAuth } from '../../components/AuthContext';
-import { API_URL } from '../../utils/supabase-client';
+import { API_URL } from '../../config';
 import {
   Calendar,
   Clock,

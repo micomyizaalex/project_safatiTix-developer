@@ -62,7 +62,7 @@
         overlay: false,
       },
       proxy: {
-        // Proxy API requests during development to the deployed backend server
+        // Proxy API requests during development to the deployed Render backend
         '/api': {
           target: 'https://backend-v2-wjcs.onrender.com',
           changeOrigin: true,

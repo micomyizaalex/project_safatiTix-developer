@@ -1,6 +1,7 @@
 import { useState, useEffect, CSSProperties } from 'react';
 import { useAuth } from '../components/AuthContext';
 import { Star, Check, CreditCard, Calendar, AlertCircle, Bus, Users, TrendingUp, Zap, BarChart3, Headphones, Globe, Shield, Settings } from 'lucide-react';
+import { API_URL } from '../../config';
 
 const SAFARITIX = {
   primary: '#0077B6',
@@ -33,8 +34,6 @@ export default function Subscription() {
   const { accessToken } = useAuth();
   const [loading, setLoading] = useState(true);
   const [currentPlan, setCurrentPlan] = useState<CurrentSubscription | null>(null);
-  const API_URL = import.meta.env.VITE_API_URL || 'https://backend-v2-wjcs.onrender.com/api';
-
   useEffect(() => {
     fetchSubscriptionInfo();
   }, []);

@@ -37,7 +37,7 @@ export default function Reports() {
   const [loading, setLoading] = useState(true);
   const [reportType, setReportType] = useState('overview');
   const [dateRange, setDateRange] = useState('month');
-  const API_URL = import.meta.env.VITE_API_URL || 'https://backend-7cxc.onrender.com/api/$1/api';
+  const API_URL = import.meta.env.VITE_API_URL || 'https://backend-v2-wjcs.onrender.com/api';
 
   useEffect(() => {
     fetchReportData();

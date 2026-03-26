@@ -10,4 +10,6 @@ export const supabase = createSupabaseClient(
 );
 
 export const createClient = createSupabaseClient;
-export const API_URL = import.meta.env.VITE_API_URL || '/api';
+export const API_URL =
+  import.meta.env.VITE_API_URL ||
+  (import.meta.env.PROD ? 'https://backend-v2-wjcs.onrender.com/api' : '/api');

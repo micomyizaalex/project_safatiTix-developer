@@ -64,7 +64,7 @@ export default function LiveTracking() {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const markers = useRef<{ [key: string]: mapboxgl.Marker }>({});
-  const API_URL = import.meta.env.VITE_API_URL || 'https://backend-7cxc.onrender.com/api/$1/api';
+  const API_URL = import.meta.env.VITE_API_URL || 'https://backend-v2-wjcs.onrender.com/api';
 
   // Initialize map
   useEffect(() => {

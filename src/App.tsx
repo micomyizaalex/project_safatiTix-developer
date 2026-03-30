@@ -37,6 +37,31 @@ import VerifyEmail from './pages/VerifyEmail';
 import ProfilePage from './pages/user/ProfilePage';
 import CompanyVerificationsPage from './pages/admin/CompanyVerificationsPage';
 import SubscriptionRequestsPage from './pages/admin/SubscriptionRequestsPage';
+import CommutersPage from './pages/why-safaritix/CommutersPage';
+import CompaniesPage from './pages/why-safaritix/CompaniesPage';
+import DriversPage from './pages/why-safaritix/DriversPage';
+import BusTrackingPage from './pages/solutions/BusTrackingPage';
+import TicketingSystemPage from './pages/solutions/TicketingSystemPage';
+import SubscriptionManagementPage from './pages/solutions/SubscriptionManagementPage';
+import DriverAppPage from './pages/solutions/DriverAppPage';
+import CompanyDashboardPage from './pages/solutions/CompanyDashboardPage';
+import DocumentationPage from './pages/resources/DocumentationPage';
+import BlogPage from './pages/resources/BlogPage';
+import ResourceHelpCenterPage from './pages/resources/HelpCenterPage';
+import APIReferencePage from './pages/resources/APIReferencePage';
+import PricingPage from './pages/pricing/PricingPage';
+import AboutUsPage from './pages/footer/AboutUsPage';
+import PopularRoutesPage from './pages/footer/PopularRoutesPage';
+import BusOperatorsPage from './pages/footer/BusOperatorsPage';
+import CareersPage from './pages/footer/CareersPage';
+import HelpCenterFooterPage from './pages/footer/HelpCenterPage';
+import FAQsPage from './pages/footer/FAQsPage';
+import ContactUsPage from './pages/footer/ContactUsPage';
+import CancellationPolicyPage from './pages/footer/CancellationPolicyPage';
+import TermsOfServicePage from './pages/footer/TermsOfServicePage';
+import PrivacyPolicyPage from './pages/footer/PrivacyPolicyPage';
+import CookiePolicyPage from './pages/footer/CookiePolicyPage';
+import AccessibilityPage from './pages/footer/AccessibilityPage';
 
 const App = () => {
   return (
@@ -46,6 +71,31 @@ const App = () => {
           <Routes>
             {/* Landing Page as default home */}
             <Route path='/' element={<LandingPage />} />
+            <Route path='/why-safaritix/commuters' element={<CommutersPage />} />
+            <Route path='/why-safaritix/companies' element={<CompaniesPage />} />
+            <Route path='/why-safaritix/drivers' element={<DriversPage />} />
+            <Route path='/solutions/bus-tracking' element={<BusTrackingPage />} />
+            <Route path='/solutions/ticketing-system' element={<TicketingSystemPage />} />
+            <Route path='/solutions/subscription-management' element={<SubscriptionManagementPage />} />
+            <Route path='/solutions/driver-app' element={<DriverAppPage />} />
+            <Route path='/solutions/company-dashboard' element={<CompanyDashboardPage />} />
+            <Route path='/resources/documentation' element={<DocumentationPage />} />
+            <Route path='/resources/blog' element={<BlogPage />} />
+            <Route path='/resources/help-center' element={<ResourceHelpCenterPage />} />
+            <Route path='/resources/api-reference' element={<APIReferencePage />} />
+            <Route path='/pricing' element={<PricingPage />} />
+            <Route path='/about' element={<AboutUsPage />} />
+            <Route path='/routes' element={<PopularRoutesPage />} />
+            <Route path='/operators' element={<BusOperatorsPage />} />
+            <Route path='/careers' element={<CareersPage />} />
+            <Route path='/help-center' element={<HelpCenterFooterPage />} />
+            <Route path='/faqs' element={<FAQsPage />} />
+            <Route path='/contact' element={<ContactUsPage />} />
+            <Route path='/cancellation-policy' element={<CancellationPolicyPage />} />
+            <Route path='/terms' element={<TermsOfServicePage />} />
+            <Route path='/privacy' element={<PrivacyPolicyPage />} />
+            <Route path='/cookies' element={<CookiePolicyPage />} />
+            <Route path='/accessibility' element={<AccessibilityPage />} />
 
             {/* Other routes wrapped in Layout */}
             <Route path='/app' element={<Layout />}>

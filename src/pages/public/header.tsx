@@ -1,83 +1,92 @@
-import React, { useState, CSSProperties } from 'react';
-import { Bus, ChevronDown, Menu, X, HelpCircle, Headphones, User } from 'lucide-react';
+import React, { CSSProperties, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { ChevronDown, Menu, X, HelpCircle, Headphones, User } from 'lucide-react';
+import BrandLogo from '../../components/BrandLogo';
 
 interface HeaderProps {
   onLoginClick?: () => void;
   onSignupClick?: () => void;
 }
 
+type NavItem = {
+  label: string;
+  href?: string;
+  to?: string;
+  dropdown?: Array<{ label: string; href?: string; to?: string }>;
+};
+
 export function Header({ onLoginClick = () => {}, onSignupClick = () => {} }: HeaderProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
 
-  const navItems = [
-    { label: 'Home', href: '#' },
-    { 
-      label: 'Why SafariTix', 
-      href: '#why',
+  const navItems: NavItem[] = [
+    { label: 'Home', to: '/' },
+    {
+      label: 'Why SafariTix',
       dropdown: [
-        { label: 'For Commuters', href: '#commuters' },
-        { label: 'For Transport Companies', href: '#companies' },
-        { label: 'For Drivers', href: '#drivers' }
-      ]
+        { label: 'For Commuters', to: '/why-safaritix/commuters' },
+        { label: 'For Transport Companies', to: '/why-safaritix/companies' },
+        { label: 'For Drivers', to: '/why-safaritix/drivers' },
+      ],
     },
-    { 
-      label: 'Solutions', 
-      href: '#solutions',
+    {
+      label: 'Solutions',
       dropdown: [
-        { label: 'Bus Tracking', href: '#tracking' },
-        { label: 'Ticketing System', href: '#ticketing' },
-        { label: 'Subscription Management', href: '#subscriptions' },
-        { label: 'Driver App', href: '#driver-app' },
-        { label: 'Company Dashboard', href: '#dashboard' }
-      ]
+        { label: 'Bus Tracking', to: '/solutions/bus-tracking' },
+        { label: 'Ticketing System', to: '/solutions/ticketing-system' },
+        { label: 'Subscription Management', to: '/solutions/subscription-management' },
+        { label: 'Driver App', to: '/solutions/driver-app' },
+        { label: 'Company Dashboard', to: '/solutions/company-dashboard' },
+      ],
     },
-    { 
-      label: 'Resources', 
-      href: '#resources',
+    {
+      label: 'Resources',
       dropdown: [
-        { label: 'Documentation', href: '#docs' },
-        { label: 'Blog', href: '#blog' },
-        { label: 'Help Center', href: '#help' },
-        { label: 'API Reference', href: '#api' }
-      ]
+        { label: 'Documentation', to: '/resources/documentation' },
+        { label: 'Blog', to: '/resources/blog' },
+        { label: 'Help Center', to: '/resources/help-center' },
+        { label: 'API Reference', to: '/resources/api-reference' },
+      ],
     },
-    { label: 'Pricing', href: '#pricing' },
+    { label: 'Pricing', to: '/pricing' },
   ];
 
   const styles: Record<string, CSSProperties> = {
     header: {
-      position: 'sticky' as const,
+      position: 'sticky',
       top: 0,
       zIndex: 1000,
       width: '100%',
-      background: 'white',
-      boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+      background: 'rgba(255, 255, 255, 0.86)',
+      backdropFilter: 'blur(18px)',
+      boxShadow: '0 1px 0 rgba(15, 23, 42, 0.06)',
     },
     topBar: {
-      background: '#2B2D42',
+      background: 'linear-gradient(90deg, #0F172A 0%, #1E293B 100%)',
       color: 'white',
-      padding: '8px 0',
-      fontSize: '0.875rem',
+      padding: '6px 0',
+      fontSize: '0.75rem',
     },
     topBarContainer: {
       maxWidth: '1440px',
       margin: '0 auto',
-      padding: '0 24px',
+      padding: '0 20px',
       display: 'flex',
       justifyContent: 'space-between',
       alignItems: 'center',
+      gap: '12px',
     },
     topBarItem: {
       display: 'flex',
       alignItems: 'center',
-      gap: '8px',
-      color: 'rgba(255, 255, 255, 0.9)',
+      gap: '6px',
+      color: 'rgba(255, 255, 255, 0.92)',
+      letterSpacing: '0.01em',
     },
     topBarRight: {
       display: 'flex',
       alignItems: 'center',
-      gap: '24px',
+      gap: '16px',
     },
     topBarLink: {
       display: 'flex',
@@ -85,44 +94,45 @@ export function Header({ onLoginClick = () => {}, onSignupClick = () => {} }: He
       gap: '6px',
       color: 'rgba(255, 255, 255, 0.9)',
       textDecoration: 'none',
-      fontSize: '0.875rem',
+      fontSize: '0.74rem',
+      fontWeight: 600,
       transition: 'color 0.2s',
       cursor: 'pointer',
+      background: 'transparent',
+      border: 'none',
+      padding: 0,
     },
     mainNav: {
-      background: 'white',
-      borderBottom: '1px solid #e5e7eb',
+      background: 'rgba(255, 255, 255, 0.72)',
     },
     navContainer: {
-      maxWidth: '1440px',
+      maxWidth: '100%',
       margin: '0 auto',
-      padding: '0 24px',
+      padding: '0 30px 0 6px',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'space-between',
-      height: '80px',
+      minHeight: '54px',
+      gap: '16px',
     },
     logo: {
       display: 'flex',
       alignItems: 'center',
-      gap: '12px',
+      gap: '10px',
       textDecoration: 'none',
-    },
-    logoText: {
-      fontSize: '1.5rem',
-      fontWeight: 'bold',
-      color: '#2B2D42',
-      fontFamily: 'Montserrat, sans-serif',
+      flexShrink: 0,
+      minWidth: '260px',
+      marginLeft: '-18px',
     },
     navLinks: {
       display: 'flex',
       alignItems: 'center',
-      gap: '32px',
+      gap: '22px',
       flex: 1,
       justifyContent: 'center',
     },
     navItem: {
-      position: 'relative' as const,
+      position: 'relative',
     },
     navLink: {
       display: 'flex',
@@ -130,69 +140,50 @@ export function Header({ onLoginClick = () => {}, onSignupClick = () => {} }: He
       gap: '4px',
       color: '#4b5563',
       textDecoration: 'none',
-      fontSize: '0.9375rem',
-      fontWeight: '500',
+      fontSize: '0.875rem',
+      fontWeight: '600',
       transition: 'color 0.2s',
       cursor: 'pointer',
-      padding: '8px 0',
+      padding: '10px 0',
       background: 'transparent',
       border: 'none',
     },
     dropdown: {
-      position: 'absolute' as const,
+      position: 'absolute',
       top: '100%',
-      left: '0',
+      left: 0,
       marginTop: '8px',
       background: 'white',
-      borderRadius: '8px',
-      boxShadow: '0 10px 25px rgba(0, 0, 0, 0.15)',
-      minWidth: '220px',
+      borderRadius: '12px',
+      boxShadow: '0 20px 40px rgba(15, 23, 42, 0.12)',
+      minWidth: '240px',
       padding: '8px',
       zIndex: 1000,
     },
     dropdownItem: {
       display: 'block',
-      padding: '10px 16px',
+      padding: '10px 14px',
       color: '#4b5563',
       textDecoration: 'none',
       fontSize: '0.875rem',
-      borderRadius: '6px',
+      borderRadius: '8px',
       transition: 'all 0.2s',
       cursor: 'pointer',
     },
     navRight: {
       display: 'flex',
       alignItems: 'center',
-      gap: '16px',
-    },
-    searchContainer: {
-      position: 'relative' as const,
-      display: 'flex',
-      alignItems: 'center',
-    },
-    searchInput: {
-      padding: '8px 16px 8px 40px',
-      border: '1px solid #e5e7eb',
-      borderRadius: '8px',
-      fontSize: '0.875rem',
-      width: '200px',
-      outline: 'none',
-      transition: 'all 0.2s',
-    },
-    searchIcon: {
-      position: 'absolute' as const,
-      left: '12px',
-      color: '#9ca3af',
-      pointerEvents: 'none' as const,
+      gap: '12px',
+      flexShrink: 0,
     },
     loginBtn: {
       background: 'transparent',
       border: 'none',
       color: '#4b5563',
-      fontSize: '0.9375rem',
-      fontWeight: '500',
+      fontSize: '0.875rem',
+      fontWeight: '600',
       cursor: 'pointer',
-      padding: '8px 16px',
+      padding: '8px 14px',
       transition: 'color 0.2s',
       display: 'flex',
       alignItems: 'center',
@@ -202,13 +193,13 @@ export function Header({ onLoginClick = () => {}, onSignupClick = () => {} }: He
       background: '#F4A261',
       color: '#2B2D42',
       border: 'none',
-      borderRadius: '8px',
-      padding: '10px 24px',
-      fontSize: '0.9375rem',
-      fontWeight: '600',
+      borderRadius: '999px',
+      padding: '11px 20px',
+      fontSize: '0.875rem',
+      fontWeight: '700',
       cursor: 'pointer',
       transition: 'all 0.2s',
-      boxShadow: '0 2px 4px rgba(244, 162, 97, 0.3)',
+      boxShadow: '0 10px 24px rgba(244, 162, 97, 0.22)',
       display: 'flex',
       alignItems: 'center',
       gap: '8px',
@@ -224,7 +215,7 @@ export function Header({ onLoginClick = () => {}, onSignupClick = () => {} }: He
     mobileMenu: {
       background: 'white',
       borderBottom: '1px solid #e5e7eb',
-      padding: '16px 24px',
+      padding: '14px 20px 18px',
     },
     mobileMenuItem: {
       padding: '12px 0',
@@ -235,7 +226,7 @@ export function Header({ onLoginClick = () => {}, onSignupClick = () => {} }: He
       color: '#4b5563',
       textDecoration: 'none',
       fontSize: '0.9375rem',
-      fontWeight: '500',
+      fontWeight: '600',
     },
     mobileSubMenu: {
       marginTop: '8px',
@@ -255,68 +246,62 @@ export function Header({ onLoginClick = () => {}, onSignupClick = () => {} }: He
       paddingTop: '16px',
       borderTop: '1px solid #e5e7eb',
       display: 'flex',
-      flexDirection: 'column' as const,
-      gap: '8px',
+      flexDirection: 'column',
+      gap: '10px',
     },
   };
 
+  const desktopNavVisible = window.innerWidth >= 1024;
+  const topBarActionsVisible = window.innerWidth >= 768;
+
   return (
     <header style={styles.header}>
-      {/* Top Bar */}
       <div style={styles.topBar}>
         <div style={styles.topBarContainer}>
           <div style={styles.topBarItem}>
             <span>📍</span>
             <span>Kigali, Rwanda</span>
           </div>
-          <div style={{ ...styles.topBarRight, display: window.innerWidth >= 768 ? 'flex' : 'none' }}>
-            <a
-              href="#faq"
+
+          <div style={{ ...styles.topBarRight, display: topBarActionsVisible ? 'flex' : 'none' }}>
+            <Link
+              to="/faqs"
               style={styles.topBarLink}
-              onMouseEnter={(e) => e.currentTarget.style.color = '#F4A261'}
-              onMouseLeave={(e) => e.currentTarget.style.color = 'rgba(255, 255, 255, 0.9)'}
+              onMouseEnter={(e) => (e.currentTarget.style.color = '#F4A261')}
+              onMouseLeave={(e) => (e.currentTarget.style.color = 'rgba(255, 255, 255, 0.9)')}
             >
-              <HelpCircle style={{ width: '16px', height: '16px' }} />
+              <HelpCircle style={{ width: '14px', height: '14px' }} />
               <span>FAQ</span>
-            </a>
-            <a
-              href="#support"
+            </Link>
+            <Link
+              to="/help-center"
               style={styles.topBarLink}
-              onMouseEnter={(e) => e.currentTarget.style.color = '#F4A261'}
-              onMouseLeave={(e) => e.currentTarget.style.color = 'rgba(255, 255, 255, 0.9)'}
+              onMouseEnter={(e) => (e.currentTarget.style.color = '#F4A261')}
+              onMouseLeave={(e) => (e.currentTarget.style.color = 'rgba(255, 255, 255, 0.9)')}
             >
-              <Headphones style={{ width: '16px', height: '16px' }} />
+              <Headphones style={{ width: '14px', height: '14px' }} />
               <span>Support</span>
-            </a>
+            </Link>
             <button
               onClick={onLoginClick}
-              style={{ ...styles.topBarLink, color: '#0077B6', fontWeight: '600' }}
-              onMouseEnter={(e) => e.currentTarget.style.color = '#F4A261'}
-              onMouseLeave={(e) => e.currentTarget.style.color = '#0077B6'}
+              style={styles.topBarLink}
+              onMouseEnter={(e) => (e.currentTarget.style.color = '#F4A261')}
+              onMouseLeave={(e) => (e.currentTarget.style.color = 'rgba(255, 255, 255, 0.9)')}
             >
-              <User style={{ width: '16px', height: '16px' }} />
-              <span>Sign In / Register</span>
+              <User style={{ width: '14px', height: '14px' }} />
+              <span>Sign In</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* Main Navigation */}
       <nav style={styles.mainNav}>
         <div style={styles.navContainer}>
-          {/* Logo */}
-          <a href="#" style={styles.logo}>
-            <Bus style={{ width: '36px', height: '36px', color: '#0077B6' }} />
-            <div>
-              <div style={styles.logoText}>SAFARITIX</div>
-              <div style={{ fontSize: '0.625rem', color: '#6b7280', letterSpacing: '0.05em' }}>
-                WE ARE PROFESSIONAL
-              </div>
-            </div>
-          </a>
+          <Link to="/" style={styles.logo}>
+            <BrandLogo imageWidth={380} imageHeight={124} />
+          </Link>
 
-          {/* Desktop Navigation */}
-          <div style={{ ...styles.navLinks, display: window.innerWidth >= 1024 ? 'flex' : 'none' }}>
+          <div style={{ ...styles.navLinks, display: desktopNavVisible ? 'flex' : 'none' }}>
             {navItems.map((item) => (
               <div
                 key={item.label}
@@ -328,40 +313,67 @@ export function Header({ onLoginClick = () => {}, onSignupClick = () => {} }: He
                   <>
                     <button
                       style={styles.navLink}
-                      onMouseEnter={(e) => e.currentTarget.style.color = '#0077B6'}
-                      onMouseLeave={(e) => e.currentTarget.style.color = '#4b5563'}
+                      onMouseEnter={(e) => (e.currentTarget.style.color = '#0077B6')}
+                      onMouseLeave={(e) => (e.currentTarget.style.color = '#4b5563')}
                     >
                       <span>{item.label}</span>
                       <ChevronDown style={{ width: '16px', height: '16px' }} />
                     </button>
                     {activeDropdown === item.label && (
                       <div style={styles.dropdown}>
-                        {item.dropdown.map((subItem) => (
-                          <a
-                            key={subItem.label}
-                            href={subItem.href}
-                            style={styles.dropdownItem}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.background = '#F5F7FA';
-                              e.currentTarget.style.color = '#0077B6';
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.background = 'transparent';
-                              e.currentTarget.style.color = '#4b5563';
-                            }}
-                          >
-                            {subItem.label}
-                          </a>
-                        ))}
+                        {item.dropdown.map((subItem) =>
+                          subItem.to ? (
+                            <Link
+                              key={subItem.label}
+                              to={subItem.to}
+                              style={styles.dropdownItem}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.background = '#F5F7FA';
+                                e.currentTarget.style.color = '#0077B6';
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.background = 'transparent';
+                                e.currentTarget.style.color = '#4b5563';
+                              }}
+                            >
+                              {subItem.label}
+                            </Link>
+                          ) : (
+                            <a
+                              key={subItem.label}
+                              href={subItem.href}
+                              style={styles.dropdownItem}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.background = '#F5F7FA';
+                                e.currentTarget.style.color = '#0077B6';
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.background = 'transparent';
+                                e.currentTarget.style.color = '#4b5563';
+                              }}
+                            >
+                              {subItem.label}
+                            </a>
+                          )
+                        )}
                       </div>
                     )}
                   </>
+                ) : item.to ? (
+                  <Link
+                    to={item.to}
+                    style={styles.navLink}
+                    onMouseEnter={(e) => (e.currentTarget.style.color = '#0077B6')}
+                    onMouseLeave={(e) => (e.currentTarget.style.color = '#4b5563')}
+                  >
+                    {item.label}
+                  </Link>
                 ) : (
                   <a
                     href={item.href}
                     style={styles.navLink}
-                    onMouseEnter={(e) => e.currentTarget.style.color = '#0077B6'}
-                    onMouseLeave={(e) => e.currentTarget.style.color = '#4b5563'}
+                    onMouseEnter={(e) => (e.currentTarget.style.color = '#0077B6')}
+                    onMouseLeave={(e) => (e.currentTarget.style.color = '#4b5563')}
                   >
                     {item.label}
                   </a>
@@ -370,50 +382,19 @@ export function Header({ onLoginClick = () => {}, onSignupClick = () => {} }: He
             ))}
           </div>
 
-          {/* Right Side */}
-          <div style={{ ...styles.navRight, display: window.innerWidth >= 1024 ? 'flex' : 'none' }}>
-            {/* Search */}
-            <div style={styles.searchContainer}>
-              <svg
-                style={styles.searchIcon}
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <circle cx="11" cy="11" r="8" />
-                <path d="m21 21-4.35-4.35" />
-              </svg>
-              <input
-                type="text"
-                placeholder="Search Services..."
-                style={styles.searchInput}
-                onFocus={(e) => {
-                  e.currentTarget.style.borderColor = '#0077B6';
-                  e.currentTarget.style.boxShadow = '0 0 0 3px rgba(0, 119, 182, 0.1)';
-                }}
-                onBlur={(e) => {
-                  e.currentTarget.style.borderColor = '#e5e7eb';
-                  e.currentTarget.style.boxShadow = 'none';
-                }}
-              />
-            </div>
-
-            {/* Get A Quote Button */}
+          <div style={{ ...styles.navRight, display: desktopNavVisible ? 'flex' : 'none' }}>
             <button
               onClick={onSignupClick}
               style={styles.getQuoteBtn}
               onMouseEnter={(e) => {
                 e.currentTarget.style.background = '#E76F51';
                 e.currentTarget.style.transform = 'translateY(-2px)';
-                e.currentTarget.style.boxShadow = '0 4px 8px rgba(244, 162, 97, 0.4)';
+                e.currentTarget.style.boxShadow = '0 14px 28px rgba(244, 162, 97, 0.3)';
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.background = '#F4A261';
                 e.currentTarget.style.transform = 'translateY(0)';
-                e.currentTarget.style.boxShadow = '0 2px 4px rgba(244, 162, 97, 0.3)';
+                e.currentTarget.style.boxShadow = '0 10px 24px rgba(244, 162, 97, 0.22)';
               }}
             >
               <span>Get A Quote</span>
@@ -421,24 +402,18 @@ export function Header({ onLoginClick = () => {}, onSignupClick = () => {} }: He
             </button>
           </div>
 
-          {/* Mobile Menu Button */}
           <button
             style={{
               ...styles.mobileMenuBtn,
-              display: window.innerWidth >= 1024 ? 'none' : 'block',
+              display: desktopNavVisible ? 'none' : 'block',
             }}
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
           >
-            {mobileMenuOpen ? (
-              <X style={{ width: '24px', height: '24px' }} />
-            ) : (
-              <Menu style={{ width: '24px', height: '24px' }} />
-            )}
+            {mobileMenuOpen ? <X style={{ width: '24px', height: '24px' }} /> : <Menu style={{ width: '24px', height: '24px' }} />}
           </button>
         </div>
       </nav>
 
-      {/* Mobile Menu */}
       {mobileMenuOpen && (
         <div style={styles.mobileMenu}>
           {navItems.map((item) => (
@@ -447,19 +422,39 @@ export function Header({ onLoginClick = () => {}, onSignupClick = () => {} }: He
                 <>
                   <div style={styles.mobileMenuLink}>{item.label}</div>
                   <div style={styles.mobileSubMenu}>
-                    {item.dropdown.map((subItem) => (
-                      <div key={subItem.label} style={styles.mobileSubMenuItem}>
-                        <a
-                          href={subItem.href}
-                          style={styles.mobileSubMenuLink}
-                          onClick={() => setMobileMenuOpen(false)}
-                        >
-                          {subItem.label}
-                        </a>
-                      </div>
-                    ))}
+                    {item.dropdown.map((subItem) =>
+                      subItem.to ? (
+                        <div key={subItem.label} style={styles.mobileSubMenuItem}>
+                          <Link
+                            to={subItem.to}
+                            style={styles.mobileSubMenuLink}
+                            onClick={() => setMobileMenuOpen(false)}
+                          >
+                            {subItem.label}
+                          </Link>
+                        </div>
+                      ) : (
+                        <div key={subItem.label} style={styles.mobileSubMenuItem}>
+                          <a
+                            href={subItem.href}
+                            style={styles.mobileSubMenuLink}
+                            onClick={() => setMobileMenuOpen(false)}
+                          >
+                            {subItem.label}
+                          </a>
+                        </div>
+                      )
+                    )}
                   </div>
                 </>
+              ) : item.to ? (
+                <Link
+                  to={item.to}
+                  style={styles.mobileMenuLink}
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  {item.label}
+                </Link>
               ) : (
                 <a
                   href={item.href}
@@ -486,7 +481,7 @@ export function Header({ onLoginClick = () => {}, onSignupClick = () => {} }: He
                 fontWeight: '600',
               }}
             >
-              Sign In / Register
+              Sign In
             </button>
             <button
               onClick={() => {

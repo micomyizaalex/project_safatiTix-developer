@@ -9,6 +9,7 @@ import { BrowserQRCodeReader } from '@zxing/browser';
 import DriverTracking from '../../components/DriverTracking';
 import { useNavigate as _useNavigate } from 'react-router-dom';
 import NotificationBell from '../../components/NotificationBell';
+import BrandLogo from '../../components/BrandLogo';
 
 // ==================== MAIN COMPONENT ====================
 import { useAuth } from '../../components/AuthContext';
@@ -427,14 +428,9 @@ export default function DriverDashboard() {
       `}>
         {/* Logo */}
         <div className="h-16 px-6 flex items-center border-b border-slate-200">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#0077B6] to-[#00A8E8] flex items-center justify-center shadow-lg">
-              <Bus className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <div className="font-black text-lg text-slate-900">SafariTix</div>
-              <div className="text-[10px] text-slate-500 font-medium -mt-1">DRIVER PORTAL</div>
-            </div>
+          <div className="flex flex-col items-start">
+            <BrandLogo imageWidth={176} imageHeight={58} />
+            <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Driver Portal</div>
           </div>
         </div>
 
@@ -514,12 +510,7 @@ export default function DriverDashboard() {
           <button onClick={() => setSidebarOpen(true)} className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-slate-100">
             <Menu className="w-6 h-6 text-slate-700" />
           </button>
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#0077B6] to-[#00A8E8] flex items-center justify-center">
-              <Bus className="w-5 h-5 text-white" />
-            </div>
-            <span className="font-black text-slate-900">SafariTix</span>
-          </div>
+          <BrandLogo imageWidth={144} imageHeight={48} />
           <NotificationBell />
         </div>
       </header>

@@ -1,6 +1,7 @@
 import { useState, useEffect, CSSProperties } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Bus, CheckCircle, XCircle, Loader } from 'lucide-react';
+import { CheckCircle, XCircle, Loader } from 'lucide-react';
+import BrandLogo from '../components/BrandLogo';
 
 const PRIMARY = '#0077B6';
 
@@ -48,10 +49,7 @@ export default function VerifyEmail() {
   return (
     <div style={s.page}>
       <div style={s.card}>
-        <div style={s.logo}>
-          <div style={s.logoIcon}><Bus size={20} /></div>
-          <span style={s.logoText}>SafariTix</span>
-        </div>
+        <BrandLogo imageWidth={184} imageHeight={60} align="center" style={{ marginBottom: '32px' }} />
 
         {status === 'loading' && (
           <>

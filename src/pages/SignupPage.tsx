@@ -12,7 +12,6 @@ import {
   SelectItem,
 } from "../components/ui/select";
 import {
-  Bus,
   AlertCircle,
   Eye,
   EyeOff,
@@ -22,6 +21,7 @@ import {
   Check,
 } from "lucide-react";
 import { Alert, AlertDescription } from "../components/ui/alert";
+import BrandLogo from "../components/BrandLogo";
 
 export default function SignupPage() {
   const [isLoading, setIsLoading] = useState(false);
@@ -432,12 +432,7 @@ export default function SignupPage() {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f3f4f6', padding: '24px' }}>
         <div style={{ background: 'white', borderRadius: '16px', padding: '48px 40px', maxWidth: '440px', width: '100%', boxShadow: '0 4px 24px rgba(0,0,0,0.08)', textAlign: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', marginBottom: '32px' }}>
-            <div style={{ width: '36px', height: '36px', background: SAFARITIX.primary, borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
-              <Bus size={20} />
-            </div>
-            <span style={{ fontSize: '20px', fontWeight: '700', color: '#2B2D42' }}>SafariTix</span>
-          </div>
+          <BrandLogo imageWidth={192} imageHeight={62} align="center" style={{ marginBottom: '32px' }} />
           <div style={{ width: '64px', height: '64px', background: '#dcfce7', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
             <Check size={32} color="#16a34a" />
           </div>
@@ -470,10 +465,7 @@ export default function SignupPage() {
         <div style={styles.leftContent}>
           {/* Logo */}
           <div style={styles.logo}>
-            <div style={styles.logoIcon}>
-              <Bus style={{ width: "24px", height: "24px" }} />
-            </div>
-            <span style={styles.logoText}>SafariTix</span>
+            <BrandLogo imageWidth={196} imageHeight={64} />
           </div>
 
           {/* Heading */}

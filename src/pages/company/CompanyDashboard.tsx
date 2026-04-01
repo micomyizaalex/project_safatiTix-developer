@@ -10,6 +10,7 @@ import CompanySharedRoutesSection from '../../components/CompanySharedRoutesSect
 import NotificationBell from '../../components/NotificationBell';
 import CompanySubscriptionManagement from './CompanySubscriptionManagement';
 import ComplaintManagementCompany from '../../components/ComplaintManagementCompany';
+import BrandLogo from '../../components/BrandLogo';
 import {
   LayoutDashboard,
   Bus,
@@ -653,18 +654,12 @@ export default function CompanyDashboard() {
         {/* Logo */}
         <div className="h-20 flex items-center justify-center border-b border-white/10">
           {sidebarOpen ? (
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-[#0077B6] to-[#005F8E] rounded-xl flex items-center justify-center shadow-lg">
-                <Bus className="w-6 h-6 text-white" />
-              </div>
-              <span className="text-xl font-['Montserrat'] font-bold bg-gradient-to-r from-[#0077B6] to-[#00A8E8] bg-clip-text text-transparent">
-                SafariTix
-              </span>
+            <div className="flex flex-col items-center">
+              <BrandLogo imageWidth={182} imageHeight={60} />
+              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/70">Company Portal</div>
             </div>
           ) : (
-            <div className="w-10 h-10 bg-gradient-to-br from-[#0077B6] to-[#005F8E] rounded-xl flex items-center justify-center shadow-lg">
-              <Bus className="w-6 h-6 text-white" />
-            </div>
+            <BrandLogo imageWidth={44} imageHeight={44} />
           )}
         </div>
 

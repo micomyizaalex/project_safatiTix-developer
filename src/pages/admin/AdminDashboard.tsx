@@ -20,6 +20,7 @@ import { DEFAULT_PLAN_PERMISSIONS } from '../../utils/subscriptionPlans';
 import AdminNotificationBell from '../../components/AdminNotificationBell';
 import AdminFleetTracking from '../../components/AdminFleetTracking';
 import ComplaintManagementAdmin from '../../components/ComplaintManagementAdmin';
+import BrandLogo from '../../components/BrandLogo';
 
 // ==================== BRAND COLORS ====================
 const COLORS = {
@@ -339,19 +340,12 @@ export default function AdminDashboard() {
         {/* Logo */}
         <div className="h-16 flex items-center justify-center border-b border-gray-200 px-4">
           {sidebarOpen ? (
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-[#0077B6] to-[#005F8E] rounded-xl flex items-center justify-center shadow-lg">
-                <Bus className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <div className="font-black text-lg text-[#2B2D42]">SafariTix</div>
-                <div className="text-[10px] text-gray-500 font-semibold -mt-1">ADMIN PORTAL</div>
-              </div>
+            <div className="flex flex-col items-center">
+              <BrandLogo imageWidth={176} imageHeight={58} />
+              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-gray-500">Admin Portal</div>
             </div>
           ) : (
-            <div className="w-10 h-10 bg-gradient-to-br from-[#0077B6] to-[#005F8E] rounded-xl flex items-center justify-center shadow-lg">
-              <Bus className="w-6 h-6 text-white" />
-            </div>
+            <BrandLogo imageWidth={44} imageHeight={44} />
           )}
         </div>
 

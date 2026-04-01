@@ -2,26 +2,31 @@ const SAFARITIX = {
   primary: '#0077B6',
   primaryDark: '#005F8E',
   primarySoft: '#E6F4FB',
+  secondary: '#F4A261',
+  success: '#27AE60',
+  danger: '#E63946',
+  neutral: '#2B2D42',
+  lightGray: '#F5F7FA',
 };
 
 import { useState, CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
-import { Bus, AlertCircle, Eye, EyeOff, TrendingUp, MapPin, Users, Check, ArrowLeft } from 'lucide-react';
+import { AlertCircle, Eye, EyeOff, Check, ArrowLeft, Bus, Zap, Shield, Clock } from 'lucide-react';
 import { Alert, AlertDescription } from './ui/alert';
 import { useAuth } from './AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { getHomePath } from './RouteGuards';
+import BrandLogo from './BrandLogo';
 
 export function Login() {
+  // ===== ALL ORIGINAL LOGIC - UNCHANGED =====
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [emailNotVerified, setEmailNotVerified] = useState<string | null>(null); // holds email when 403
+  const [emailNotVerified, setEmailNotVerified] = useState<string | null>(null);
   const [resendLoading, setResendLoading] = useState(false);
   const [resendSent, setResendSent] = useState(false);
-
-  // Login state
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const { signIn } = useAuth();
@@ -69,15 +74,12 @@ export function Login() {
 
       setSuccessMessage('Login successful!');
 
-      // If server indicates password change required, redirect to first-login change
       if (data.must_change_password) {
-        // persist token and user for change page
         await signIn(data.token, data.user);
         navigate('/first-login-change', { replace: true });
         return;
       }
 
-      // Use AuthProvider to persist and set the authenticated user, then navigate
       await signIn(data.token, data.user);
       const redirect = data?.homePath || data?.user?.homePath || getHomePath(data.user);
       navigate(redirect || '/', { replace: true });
@@ -88,134 +90,133 @@ export function Login() {
       setIsLoading(false);
     }
   }
+  // ===== END ORIGINAL LOGIC =====
 
+  // ===== NEW UI STYLES - MODERN & PREMIUM =====
   const styles: Record<string, CSSProperties> = {
     container: {
       display: 'flex',
       minHeight: '100vh',
-      fontFamily: 'Inter, sans-serif',
+      fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
+      background: SAFARITIX.lightGray,
     },
-    // Left Side - Form
-    leftSide: {
+    
+    // Left Column - Form Section
+    formSection: {
       flex: 1,
       display: 'flex',
-      flexDirection: 'column' as const,
+      alignItems: 'center',
       justifyContent: 'center',
-      padding: '40px',
+      padding: '40px 20px',
       background: 'white',
-      overflowY: 'auto' as const,
+      position: 'relative' as const,
     },
-    leftContent: {
-      maxWidth: '480px',
+    
+    formContainer: {
       width: '100%',
-      margin: '0 auto',
+      maxWidth: '440px',
     },
-    backButton: {
-      display: 'flex',
+    
+    backLink: {
+      display: 'inline-flex',
       alignItems: 'center',
       gap: '8px',
       color: '#6b7280',
-      background: 'transparent',
-      border: 'none',
-      cursor: 'pointer',
-      fontSize: '14px',
-      marginBottom: '20px',
-      padding: '8px 0',
-      transition: 'color 0.2s',
-    },
-    logo: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: '12px',
-      marginBottom: '48px',
-    },
-    logoIcon: {
-      width: '40px',
-      height: '40px',
-      background: SAFARITIX.primary,
-      borderRadius: '12px',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      color: 'white',
-    },
-    logoText: {
-      fontSize: '24px',
-      fontWeight: '700',
-      color: '#2B2D42',
-      fontFamily: 'Montserrat, sans-serif',
-    },
-    heading: {
-      fontSize: 'clamp(28px, 4vw, 36px)',
-      fontWeight: '700',
-      color: '#2B2D42',
-      marginBottom: '8px',
-      fontFamily: 'Montserrat, sans-serif',
-    },
-    subheading: {
-      fontSize: '16px',
-      color: '#6b7280',
-      marginBottom: '32px',
-    },
-    socialButtons: {
-      display: 'flex',
-      gap: '12px',
-      marginBottom: '24px',
-    },
-    socialBtn: {
-      flex: 1,
-      padding: '12px 20px',
-      border: '1.5px solid #e5e7eb',
-      borderRadius: '12px',
-      background: 'white',
-      cursor: 'pointer',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: '8px',
       fontSize: '14px',
       fontWeight: '500',
+      textDecoration: 'none',
+      marginBottom: '32px',
+      transition: 'color 0.2s',
+    },
+    
+    logoSection: {
+      marginBottom: '40px',
+    },
+    
+    heading: {
+      fontSize: '32px',
+      fontWeight: '700',
+      color: SAFARITIX.neutral,
+      marginBottom: '8px',
+      fontFamily: 'Montserrat, sans-serif',
+      letterSpacing: '-0.02em',
+    },
+    
+    subheading: {
+      fontSize: '15px',
+      color: '#6b7280',
+      lineHeight: '1.6',
+      marginBottom: '32px',
+    },
+    
+    googleButton: {
+      width: '100%',
+      padding: '14px 20px',
+      border: '2px solid #e5e7eb',
+      borderRadius: '12px',
+      background: 'white',
+      cursor: 'pointer',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: '12px',
+      fontSize: '15px',
+      fontWeight: '600',
       color: '#374151',
       transition: 'all 0.2s',
+      marginBottom: '24px',
     },
+    
     divider: {
       display: 'flex',
       alignItems: 'center',
-      margin: '24px 0',
-      color: '#9ca3af',
-      fontSize: '14px',
+      margin: '28px 0',
     },
+    
     dividerLine: {
       flex: 1,
       height: '1px',
       background: '#e5e7eb',
     },
+    
     dividerText: {
       padding: '0 16px',
+      fontSize: '13px',
+      fontWeight: '500',
+      color: '#9ca3af',
+      textTransform: 'uppercase' as const,
+      letterSpacing: '0.05em',
     },
+    
     formGroup: {
       marginBottom: '20px',
     },
+    
     label: {
       display: 'block',
       fontSize: '14px',
-      fontWeight: '500',
-      color: '#374151',
+      fontWeight: '600',
+      color: SAFARITIX.neutral,
       marginBottom: '8px',
     },
+    
     input: {
       width: '100%',
-      padding: '12px 16px',
-      border: '1.5px solid #e5e7eb',
+      padding: '14px 16px',
+      border: '2px solid #e5e7eb',
       borderRadius: '12px',
       fontSize: '15px',
+      color: SAFARITIX.neutral,
       outline: 'none',
       transition: 'all 0.2s',
       background: 'white',
+      fontFamily: 'inherit',
     },
+    
     passwordWrapper: {
       position: 'relative' as const,
     },
+    
     passwordToggle: {
       position: 'absolute' as const,
       right: '16px',
@@ -226,59 +227,75 @@ export function Login() {
       cursor: 'pointer',
       color: '#9ca3af',
       padding: '4px',
+      transition: 'color 0.2s',
     },
+    
     rememberForgot: {
       display: 'flex',
       justifyContent: 'space-between',
       alignItems: 'center',
-      marginBottom: '24px',
+      marginBottom: '28px',
     },
-    remember: {
+    
+    rememberBox: {
       display: 'flex',
       alignItems: 'center',
       gap: '8px',
     },
+    
     checkbox: {
-      width: '16px',
-      height: '16px',
+      width: '18px',
+      height: '18px',
       cursor: 'pointer',
       accentColor: SAFARITIX.primary,
     },
-    rememberLabel: {
+    
+    checkboxLabel: {
       fontSize: '14px',
       color: '#6b7280',
+      fontWeight: '500',
+      cursor: 'pointer',
     },
+    
     forgotLink: {
       fontSize: '14px',
       color: SAFARITIX.primary,
       textDecoration: 'none',
-      fontWeight: '500',
+      fontWeight: '600',
+      transition: 'color 0.2s',
     },
-    submitBtn: {
+    
+    loginButton: {
       width: '100%',
-      padding: '14px',
-      background: SAFARITIX.primary,
+      padding: '16px',
+      background: `linear-gradient(135deg, ${SAFARITIX.primary} 0%, ${SAFARITIX.primaryDark} 100%)`,
       color: 'white',
       border: 'none',
       borderRadius: '12px',
       fontSize: '16px',
-      fontWeight: '600',
+      fontWeight: '700',
       cursor: 'pointer',
-      transition: 'all 0.2s',
-      marginBottom: '20px',
+      transition: 'all 0.3s',
+      marginBottom: '24px',
+      boxShadow: `0 8px 24px ${SAFARITIX.primary}40`,
     },
-    footer: {
+    
+    signupPrompt: {
       textAlign: 'center' as const,
       fontSize: '14px',
       color: '#6b7280',
-    },
-    link: {
-      color: SAFARITIX.primary,
-      textDecoration: 'none',
       fontWeight: '500',
     },
-    // Right Side - Info Panel
-    rightSide: {
+    
+    signupLink: {
+      color: SAFARITIX.primary,
+      textDecoration: 'none',
+      fontWeight: '700',
+      transition: 'color 0.2s',
+    },
+    
+    // Right Column - Brand Section
+    brandSection: {
       flex: 1,
       background: `linear-gradient(135deg, ${SAFARITIX.primary} 0%, ${SAFARITIX.primaryDark} 100%)`,
       padding: '60px',
@@ -289,155 +306,163 @@ export function Login() {
       position: 'relative' as const,
       overflow: 'hidden' as const,
     },
-    rightContent: {
+    
+    brandContent: {
       position: 'relative' as const,
       zIndex: 2,
     },
-    rightHeading: {
-      fontSize: 'clamp(32px, 4vw, 48px)',
-      fontWeight: '700',
-      marginBottom: '16px',
-      fontFamily: 'Montserrat, sans-serif',
-      lineHeight: '1.2',
-    },
-    rightSubheading: {
-      fontSize: '18px',
-      marginBottom: '48px',
-      opacity: 0.95,
-      lineHeight: '1.6',
-    },
-    statsCard: {
-      background: 'rgba(255, 255, 255, 0.15)',
-      backdropFilter: 'blur(10px)',
-      borderRadius: '20px',
-      padding: '24px',
+    
+    brandHeading: {
+      fontSize: '48px',
+      fontWeight: '800',
       marginBottom: '20px',
-      border: '1px solid rgba(255, 255, 255, 0.2)',
+      fontFamily: 'Montserrat, sans-serif',
+      lineHeight: '1.1',
+      letterSpacing: '-0.02em',
     },
-    statsHeader: {
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginBottom: '16px',
+    
+    brandSubheading: {
+      fontSize: '18px',
+      lineHeight: '1.7',
+      opacity: 0.95,
+      marginBottom: '56px',
+      maxWidth: '480px',
     },
-    statsTitle: {
-      fontSize: '14px',
-      opacity: 0.9,
+    
+    featureGrid: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(2, 1fr)',
+      gap: '20px',
+      marginBottom: '48px',
     },
-    statsValue: {
-      fontSize: '32px',
-      fontWeight: '700',
-      marginBottom: '8px',
+    
+    featureCard: {
+      background: 'rgba(255, 255, 255, 0.12)',
+      backdropFilter: 'blur(12px)',
+      borderRadius: '16px',
+      padding: '24px',
+      border: '1px solid rgba(255, 255, 255, 0.18)',
+      transition: 'all 0.3s',
     },
-    statsChange: {
-      fontSize: '14px',
-      display: 'flex',
-      alignItems: 'center',
-      gap: '4px',
-    },
-    features: {
-      marginTop: '40px',
-    },
-    feature: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: '12px',
-      marginBottom: '16px',
-    },
+    
     featureIcon: {
-      width: '24px',
-      height: '24px',
-      background: 'rgba(255, 255, 255, 0.2)',
-      borderRadius: '8px',
+      width: '48px',
+      height: '48px',
+      background: 'rgba(255, 255, 255, 0.15)',
+      borderRadius: '12px',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
+      marginBottom: '16px',
     },
-    trustedBy: {
-      marginTop: '60px',
-      paddingTop: '40px',
-      borderTop: '1px solid rgba(255, 255, 255, 0.2)',
+    
+    featureTitle: {
+      fontSize: '16px',
+      fontWeight: '700',
+      marginBottom: '8px',
     },
-    trustedTitle: {
+    
+    featureDescription: {
       fontSize: '14px',
-      marginBottom: '20px',
-      opacity: 0.8,
+      opacity: 0.9,
+      lineHeight: '1.5',
     },
-    logos: {
+    
+    statsRow: {
       display: 'flex',
       gap: '32px',
-      alignItems: 'center',
-      flexWrap: 'wrap' as const,
+      paddingTop: '32px',
+      borderTop: '1px solid rgba(255, 255, 255, 0.2)',
     },
-    logoItem: {
-      opacity: 0.7,
-      fontSize: '20px',
-      fontWeight: '600',
+    
+    statItem: {
+      flex: 1,
     },
-    // Decorative elements
-    circle1: {
+    
+    statValue: {
+      fontSize: '32px',
+      fontWeight: '800',
+      marginBottom: '4px',
+      fontFamily: 'Montserrat, sans-serif',
+    },
+    
+    statLabel: {
+      fontSize: '13px',
+      opacity: 0.85,
+      fontWeight: '500',
+    },
+    
+    // Decorative Elements
+    decorCircle1: {
       position: 'absolute' as const,
-      width: '400px',
-      height: '400px',
+      width: '500px',
+      height: '500px',
       borderRadius: '50%',
-      background: 'rgba(255, 255, 255, 0.05)',
-      top: '-100px',
-      right: '-100px',
+      background: 'rgba(255, 255, 255, 0.06)',
+      top: '-150px',
+      right: '-150px',
       zIndex: 1,
     },
-    circle2: {
+    
+    decorCircle2: {
       position: 'absolute' as const,
-      width: '300px',
-      height: '300px',
+      width: '350px',
+      height: '350px',
       borderRadius: '50%',
-      background: 'rgba(255, 255, 255, 0.05)',
-      bottom: '-50px',
-      left: '-50px',
+      background: 'rgba(255, 255, 255, 0.06)',
+      bottom: '-100px',
+      left: '-100px',
       zIndex: 1,
     },
   };
 
   return (
     <div style={styles.container}>
-      {/* Left Side - Form */}
-      <div style={styles.leftSide}>
-        <div style={styles.leftContent}>
+      {/* LEFT - FORM SECTION */}
+      <div style={styles.formSection}>
+        <div style={styles.formContainer}>
           {/* Back to Home */}
-          <Link to="/" style={styles.backButton as any} onMouseEnter={(e) => e.currentTarget.style.color = '#0077B6'} onMouseLeave={(e) => e.currentTarget.style.color = '#6b7280'}>
-            <ArrowLeft size={16} />
+          <Link
+            to="/"
+            style={styles.backLink}
+            onMouseEnter={(e) => e.currentTarget.style.color = SAFARITIX.primary}
+            onMouseLeave={(e) => e.currentTarget.style.color = '#6b7280'}
+          >
+            <ArrowLeft size={18} />
             Back to home
           </Link>
 
           {/* Logo */}
-          <div style={styles.logo}>
-            <div style={styles.logoIcon}>
-              <Bus style={{ width: '24px', height: '24px' }} />
-            </div>
-            <span style={styles.logoText}>SafariTix</span>
+          <div style={styles.logoSection}>
+            <BrandLogo imageWidth={180} imageHeight={60} />
           </div>
 
           {/* Heading */}
           <h1 style={styles.heading}>Welcome Back</h1>
           <p style={styles.subheading}>
-            Sign in to your account to continue your journey with smart bus ticketing.
+            Sign in to access your personalized dashboard and manage your journeys seamlessly.
           </p>
 
-          {/* Social Login Buttons */}
-          <div style={styles.socialButtons}>
-            <button
-              style={styles.socialBtn}
-              onMouseEnter={(e) => e.currentTarget.style.background = '#f9fafb'}
-              onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24">
-                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-              </svg>
-              Sign in with Google
-            </button>
-          </div>
+          {/* Google Sign In */}
+          <button
+            style={styles.googleButton}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = '#f9fafb';
+              e.currentTarget.style.borderColor = SAFARITIX.primary;
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'white';
+              e.currentTarget.style.borderColor = '#e5e7eb';
+            }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24">
+              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+            </svg>
+            Continue with Google
+          </button>
 
           {/* Divider */}
           <div style={styles.divider}>
@@ -446,59 +471,86 @@ export function Login() {
             <div style={styles.dividerLine} />
           </div>
 
-          {/* Error/Success Messages */}
+          {/* Error Alert */}
           {error && (
-            <Alert className="mb-4 bg-red-50 border-red-200" style={{ marginBottom: emailNotVerified ? '8px' : '20px' }}>
-              <AlertCircle style={{ width: '16px', height: '16px', color: '#E63946' }} />
-              <AlertDescription style={{ color: '#991B1B' }}>{error}</AlertDescription>
+            <Alert style={{ marginBottom: emailNotVerified ? '8px' : '20px', background: '#FEF2F2', border: `2px solid ${SAFARITIX.danger}30`, borderRadius: '12px', padding: '14px 16px' }}>
+              <AlertCircle style={{ width: '18px', height: '18px', color: SAFARITIX.danger }} />
+              <AlertDescription style={{ color: '#991B1B', fontSize: '14px', fontWeight: '500' }}>{error}</AlertDescription>
             </Alert>
           )}
 
+          {/* Email Verification Notice */}
           {emailNotVerified && (
-            <div style={{ background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '10px', padding: '12px 16px', marginBottom: '20px', fontSize: '14px' }}>
+            <div style={{ 
+              background: '#FFFBEB', 
+              border: `2px solid ${SAFARITIX.secondary}60`, 
+              borderRadius: '12px', 
+              padding: '14px 16px', 
+              marginBottom: '20px',
+              fontSize: '14px',
+              fontWeight: '500',
+            }}>
               {resendSent ? (
-                <span style={{ color: '#15803d' }}>✓ A new verification link has been sent to <strong>{emailNotVerified}</strong>.</span>
+                <span style={{ color: SAFARITIX.success }}>
+                  ✓ Verification email sent to <strong>{emailNotVerified}</strong>
+                </span>
               ) : (
                 <>
-                  <span style={{ color: '#92400e' }}>Didn't get the email? </span>
+                  <span style={{ color: '#92400e' }}>Email not verified. </span>
                   <button
                     type="button"
                     onClick={handleResend}
                     disabled={resendLoading}
-                    style={{ background: 'none', border: 'none', color: '#0077B6', fontWeight: '600', cursor: resendLoading ? 'not-allowed' : 'pointer', padding: 0, fontSize: '14px' }}
+                    style={{ 
+                      background: 'none', 
+                      border: 'none', 
+                      color: SAFARITIX.primary, 
+                      fontWeight: '700', 
+                      cursor: resendLoading ? 'not-allowed' : 'pointer',
+                      padding: 0,
+                      fontSize: '14px',
+                      textDecoration: 'underline',
+                    }}
                   >
-                    {resendLoading ? 'Sending…' : 'Resend verification email'}
+                    {resendLoading ? 'Sending…' : 'Resend verification'}
                   </button>
                 </>
               )}
             </div>
           )}
 
+          {/* Success Alert */}
           {successMessage && (
-            <Alert className="mb-4 bg-green-50 border-green-200" style={{ marginBottom: '20px' }}>
-              <Check style={{ width: '16px', height: '16px', color: '#27AE60' }} />
-              <AlertDescription style={{ color: '#166534' }}>{successMessage}</AlertDescription>
+            <Alert style={{ marginBottom: '20px', background: '#F0FDF4', border: `2px solid ${SAFARITIX.success}30`, borderRadius: '12px', padding: '14px 16px' }}>
+              <Check style={{ width: '18px', height: '18px', color: SAFARITIX.success }} />
+              <AlertDescription style={{ color: '#166534', fontSize: '14px', fontWeight: '500' }}>{successMessage}</AlertDescription>
             </Alert>
           )}
 
-          {/* Form */}
+          {/* Login Form */}
           <form onSubmit={handleLogin}>
-            {/* Email */}
+            {/* Email Field */}
             <div style={styles.formGroup}>
-              <label style={styles.label}>Email</label>
+              <label style={styles.label}>Email Address</label>
               <input
                 type="email"
-                placeholder="Enter your email"
+                placeholder="your@email.com"
                 value={loginEmail}
                 onChange={(e) => setLoginEmail(e.target.value)}
                 style={styles.input}
-                onFocus={(e) => e.currentTarget.style.borderColor = '#0077B6'}
-                onBlur={(e) => e.currentTarget.style.borderColor = '#e5e7eb'}
+                onFocus={(e) => {
+                  e.currentTarget.style.borderColor = SAFARITIX.primary;
+                  e.currentTarget.style.boxShadow = `0 0 0 3px ${SAFARITIX.primary}15`;
+                }}
+                onBlur={(e) => {
+                  e.currentTarget.style.borderColor = '#e5e7eb';
+                  e.currentTarget.style.boxShadow = 'none';
+                }}
                 required
               />
             </div>
 
-            {/* Password */}
+            {/* Password Field */}
             <div style={styles.formGroup}>
               <label style={styles.label}>Password</label>
               <div style={styles.passwordWrapper}>
@@ -509,14 +561,22 @@ export function Login() {
                   value={loginPassword}
                   onChange={(e) => setLoginPassword(e.target.value)}
                   style={styles.input}
-                  onFocus={(e) => e.currentTarget.style.borderColor = '#0077B6'}
-                  onBlur={(e) => e.currentTarget.style.borderColor = '#e5e7eb'}
+                  onFocus={(e) => {
+                    e.currentTarget.style.borderColor = SAFARITIX.primary;
+                    e.currentTarget.style.boxShadow = `0 0 0 3px ${SAFARITIX.primary}15`;
+                  }}
+                  onBlur={(e) => {
+                    e.currentTarget.style.borderColor = '#e5e7eb';
+                    e.currentTarget.style.boxShadow = 'none';
+                  }}
                   required
                 />
                 <button
                   type="button"
                   style={styles.passwordToggle}
                   onClick={() => setShowPassword(!showPassword)}
+                  onMouseEnter={(e) => e.currentTarget.style.color = SAFARITIX.neutral}
+                  onMouseLeave={(e) => e.currentTarget.style.color = '#9ca3af'}
                 >
                   {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                 </button>
@@ -525,121 +585,183 @@ export function Login() {
 
             {/* Remember & Forgot */}
             <div style={styles.rememberForgot}>
-              <div style={styles.remember}>
+              <div style={styles.rememberBox}>
                 <input
                   type="checkbox"
                   id="remember"
                   style={styles.checkbox}
                 />
-                <label htmlFor="remember" style={styles.rememberLabel}>
+                <label htmlFor="remember" style={styles.checkboxLabel}>
                   Remember me
                 </label>
               </div>
-              <Link to="/forgot-password" style={styles.forgotLink}>
+              <Link
+                to="/forgot-password"
+                style={styles.forgotLink}
+                onMouseEnter={(e) => e.currentTarget.style.color = SAFARITIX.primaryDark}
+                onMouseLeave={(e) => e.currentTarget.style.color = SAFARITIX.primary}
+              >
                 Forgot password?
               </Link>
             </div>
 
-            {/* Submit Button */}
+            {/* Login Button */}
             <button
               type="submit"
-              style={styles.submitBtn}
-              className="w-full px-4 py-3 rounded-lg font-semibold text-white bg-primary hover:opacity-95"
+              style={styles.loginButton}
               disabled={isLoading}
-              onMouseEnter={(e) => !isLoading && (e.currentTarget.style.background = '#005a8c')}
-              onMouseLeave={(e) => !isLoading && (e.currentTarget.style.background = '#0077B6')}
+              onMouseEnter={(e) => !isLoading && (e.currentTarget.style.transform = 'translateY(-2px)')}
+              onMouseLeave={(e) => !isLoading && (e.currentTarget.style.transform = 'translateY(0)')}
             >
-              {isLoading ? 'Logging in...' : 'Sign In'}
+              {isLoading ? 'Signing in...' : 'Sign In'}
             </button>
           </form>
 
-          {/* Footer */}
-          <p style={styles.footer}>
+          {/* Sign Up Link */}
+          <p style={styles.signupPrompt}>
             Don't have an account?{' '}
-            <Link to="/app/signup" style={styles.link}>
-              Sign up for free
+            <Link
+              to="/app/signup"
+              style={styles.signupLink}
+              onMouseEnter={(e) => e.currentTarget.style.color = SAFARITIX.primaryDark}
+              onMouseLeave={(e) => e.currentTarget.style.color = SAFARITIX.primary}
+            >
+              Create free account
             </Link>
           </p>
         </div>
       </div>
 
-      {/* Right Side - Info Panel */}
-      <div style={{ ...styles.rightSide, display: window.innerWidth >= 1024 ? 'flex' : 'none' }}>
-        {/* Decorative circles */}
-        <div style={styles.circle1} />
-        <div style={styles.circle2} />
+      {/* RIGHT - BRAND SECTION */}
+      <div style={{ ...styles.brandSection, display: window.innerWidth >= 1024 ? 'flex' : 'none' }}>
+        {/* Decorative Elements */}
+        <div style={styles.decorCircle1} />
+        <div style={styles.decorCircle2} />
 
-        <div style={styles.rightContent}>
-          <h2 style={styles.rightHeading}>
-            Seamless Travel
+        <div style={styles.brandContent}>
+          {/* Heading */}
+          <h2 style={styles.brandHeading}>
+            Smart Travel,
             <br />
-            Starts Here
+            Simplified.
           </h2>
-          <p style={styles.rightSubheading}>
-            Access your personalized dashboard with real-time bus tracking and ticket management.
+          <p style={styles.brandSubheading}>
+            Experience seamless bus ticketing with real-time tracking, instant bookings, and secure payments — all in one platform.
           </p>
 
-          {/* Stats Cards */}
-          <div style={styles.statsCard}>
-            <div style={styles.statsHeader}>
-              <span style={styles.statsTitle}>Active Users</span>
-              <Users size={20} />
-            </div>
-            <div style={styles.statsValue}>12,543</div>
-            <div style={styles.statsChange}>
-              <TrendingUp size={16} />
-              <span>40% last month</span>
-            </div>
-          </div>
-
-          <div style={styles.statsCard}>
-            <div style={styles.statsHeader}>
-              <span style={styles.statsTitle}>Buses Tracked</span>
-              <MapPin size={20} />
-            </div>
-            <div style={styles.statsValue}>856</div>
-            <div style={styles.statsChange}>
-              <TrendingUp size={16} />
-              <span>18% last month</span>
-            </div>
-          </div>
-
-          {/* Features */}
-          <div style={styles.features}>
-            {[
-              'Personalized dashboard',
-              'Real-time bus tracking', 
-              'Quick ticket booking',
-              'Secure payment history'
-            ].map((feature, idx) => (
-              <div key={idx} style={styles.feature}>
-                <div style={styles.featureIcon}>
-                  <Check size={16} />
-                </div>
-                <span>{feature}</span>
+          {/* Feature Cards */}
+          <div style={styles.featureGrid}>
+            <div
+              style={styles.featureCard}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'translateY(-4px)';
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.18)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.12)';
+              }}
+            >
+              <div style={styles.featureIcon}>
+                <Bus size={24} />
               </div>
-            ))}
+              <div style={styles.featureTitle}>Live Tracking</div>
+              <div style={styles.featureDescription}>
+                Track your bus in real-time and never miss your ride
+              </div>
+            </div>
+
+            <div
+              style={styles.featureCard}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'translateY(-4px)';
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.18)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.12)';
+              }}
+            >
+              <div style={styles.featureIcon}>
+                <Zap size={24} />
+              </div>
+              <div style={styles.featureTitle}>Instant Booking</div>
+              <div style={styles.featureDescription}>
+                Book tickets in seconds with our fast checkout
+              </div>
+            </div>
+
+            <div
+              style={styles.featureCard}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'translateY(-4px)';
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.18)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.12)';
+              }}
+            >
+              <div style={styles.featureIcon}>
+                <Shield size={24} />
+              </div>
+              <div style={styles.featureTitle}>Secure Payments</div>
+              <div style={styles.featureDescription}>
+                Safe and encrypted transactions every time
+              </div>
+            </div>
+
+            <div
+              style={styles.featureCard}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'translateY(-4px)';
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.18)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.12)';
+              }}
+            >
+              <div style={styles.featureIcon}>
+                <Clock size={24} />
+              </div>
+              <div style={styles.featureTitle}>24/7 Support</div>
+              <div style={styles.featureDescription}>
+                Customer support available whenever you need
+              </div>
+            </div>
           </div>
 
-          {/* Trusted By */}
-          <div style={styles.trustedBy}>
-            <p style={styles.trustedTitle}>Trusted by leading transport companies</p>
-            <div style={styles.logos}>
-              <span style={styles.logoItem}>Volcano</span>
-              <span style={styles.logoItem}>Ritco</span>
-              <span style={styles.logoItem}>Virunga</span>
-              <span style={styles.logoItem}>Onatracom</span>
+          {/* Stats */}
+          <div style={styles.statsRow}>
+            <div style={styles.statItem}>
+              <div style={styles.statValue}>50K+</div>
+              <div style={styles.statLabel}>Active Users</div>
+            </div>
+            <div style={styles.statItem}>
+              <div style={styles.statValue}>2M+</div>
+              <div style={styles.statLabel}>Tickets Booked</div>
+            </div>
+            <div style={styles.statItem}>
+              <div style={styles.statValue}>850+</div>
+              <div style={styles.statLabel}>Routes Covered</div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Mobile-specific styles */}
+      {/* Responsive Styles */}
       <style>
         {`
           @media (max-width: 1024px) {
             .container {
               flex-direction: column;
+            }
+          }
+          
+          @media (max-width: 640px) {
+            h1 {
+              font-size: 28px !important;
             }
           }
         `}

@@ -1,7 +1,8 @@
 import { useState, useEffect, CSSProperties } from 'react';
 import { Link, useSearchParams, useNavigate } from 'react-router-dom';
-import { Bus, AlertCircle, Eye, EyeOff, Check, ArrowLeft, Lock } from 'lucide-react';
+import { AlertCircle, Eye, EyeOff, Check, ArrowLeft, Lock } from 'lucide-react';
 import { Alert, AlertDescription } from '../components/ui/alert';
+import BrandLogo from '../components/BrandLogo';
 
 const PRIMARY = '#0077B6';
 
@@ -76,10 +77,7 @@ export default function ResetPassword() {
     return (
       <div style={s.page}>
         <div style={s.card}>
-          <div style={s.logo}>
-            <div style={s.logoIcon}><Bus size={20} /></div>
-            <span style={s.logoText}>SafariTix</span>
-          </div>
+          <BrandLogo imageWidth={184} imageHeight={60} style={{ marginBottom: '32px' }} />
           <div style={s.successIcon}>
             <Check size={32} color="#16a34a" />
           </div>
@@ -98,10 +96,7 @@ export default function ResetPassword() {
   return (
     <div style={s.page}>
       <div style={s.card}>
-        <div style={s.logo}>
-          <div style={s.logoIcon}><Bus size={20} /></div>
-          <span style={s.logoText}>SafariTix</span>
-        </div>
+        <BrandLogo imageWidth={184} imageHeight={60} style={{ marginBottom: '32px' }} />
 
         <div style={s.iconWrap}>
           <Lock size={26} color={PRIMARY} />

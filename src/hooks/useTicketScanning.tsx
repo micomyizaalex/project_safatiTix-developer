@@ -75,7 +75,7 @@ export function useAdminTicketScans(companyId?: string) {
       if ('Notification' in window && Notification.permission === 'granted') {
         new Notification('Ticket Scanned', {
           body: `${data.passengerName} checked in to ${data.busPlate}`,
-          icon: '/logo.png',
+          icon: '/images/SafariTix-Logo.png',
         });
       }
     });
@@ -125,7 +125,7 @@ export function useCommuterTicketUpdates() {
       if ('Notification' in window && Notification.permission === 'granted') {
         new Notification('Ticket Updated', {
           body: data.message,
-          icon: '/logo.png',
+          icon: '/images/SafariTix-Logo.png',
         });
       }
     });
